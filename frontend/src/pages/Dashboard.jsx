@@ -43,18 +43,21 @@ export default function Dashboard() {
       .finally(() => setLoading(false));
   }, []);
 
-  const isCloudLite = backendHealth?.mode === 'cloud-lite' || backendHealth?.neural_available === false;
+  const isCloudLite = Boolean(
+    backendHealth && (backendHealth.neural_available === false || backendHealth.engine === 'cloud-lite-dsp')
+  );
 
   return (
     <div>
       {/* System Status Banner */}
       <Banner
         message={isCloudLite
-          ? "VoxGuard Cloud Lite DSP Engine Online • Lightweight Acoustic Forensics Active (Render Free Cloud-Lite)."
-          : "VoxGuard Neural Audio Defense Engine v3.0 Online • PyTorch AcousticNet & Faster-Whisper Real-Time Pipeline Active."
+          ? "VoxGuard Cloud Lite DSP Engine Online • Lightweight Acoustic Forensics Active (DSP Fallback)."
+          : "VoxGuard Neural Anti-Spoofing Defense Engine Online • ONNX AcousticNet Anti-Spoofing & Acoustic Forensics Active."
         }
-        badge={isCloudLite ? "CLOUD LITE DSP ONLINE" : "SECURITY SHIELD ONLINE"}
+        badge={isCloudLite ? "CLOUD LITE DSP ONLINE" : "NEURAL ANTI-SPOOFING ONLINE"}
       />
+
 
       {/* Page Header */}
       <div className="page-header-bar">
@@ -358,17 +361,18 @@ export default function Dashboard() {
                   <Server size={14} /> Backend Inference
                 </span>
                 <span style={{ color: 'var(--safe)' }}>
-                  {isCloudLite ? 'Cloud Lite DSP (Online)' : 'FastAPI Full ML (Online)'}
+                  {isCloudLite ? 'Cloud Lite DSP (Online)' : (backendHealth?.engine === 'onnx-acousticnet' ? 'Neural ONNX AcousticNet (Online)' : 'FastAPI Full ML (Online)')}
                 </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border-subtle)' }}>
                 <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Cpu size={14} /> Speech Transcription
                 </span>
-                <span style={{ color: isCloudLite ? 'var(--text-muted)' : 'var(--cyan-400)' }}>
-                  {isCloudLite ? 'Bypassed (Cloud Lite)' : 'Faster-Whisper Tiny (CPU)'}
+                <span style={{ color: backendHealth?.transcription_available ? 'var(--cyan-400)' : 'var(--text-muted)' }}>
+                  {backendHealth?.transcription_available ? 'Faster-Whisper Tiny (CPU)' : 'Bypassed (Low-RAM Profile)'}
                 </span>
               </div>
+
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0' }}>
                 <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Lock size={14} /> Audit Trail Database

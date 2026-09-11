@@ -306,16 +306,14 @@ export default function AnalyzeVoice() {
                     Session ID: {analysisContract.analysisId}
                   </span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    {isCloudLite && (
-                      <span className="demo-pill" style={{
-                        borderColor: 'var(--cyan-400)',
-                        color: 'var(--cyan-400)',
-                        background: 'rgba(6, 182, 212, 0.12)',
-                        fontWeight: 600
-                      }}>
-                        Cloud Lite DSP Analysis
-                      </span>
-                    )}
+                    <span className="demo-pill" style={{
+                      borderColor: isCloudLite ? 'var(--cyan-400)' : 'var(--brand-primary)',
+                      color: isCloudLite ? 'var(--cyan-400)' : 'var(--brand-primary)',
+                      background: isCloudLite ? 'rgba(6, 182, 212, 0.12)' : 'rgba(99, 102, 241, 0.12)',
+                      fontWeight: 600
+                    }}>
+                      {isCloudLite ? 'Cloud Lite DSP Analysis' : 'Neural Anti-Spoofing Analysis'}
+                    </span>
                     <span className="demo-pill" style={{
                       borderColor: unifiedRisk.borderColor,
                       color: unifiedRisk.color,
@@ -341,7 +339,7 @@ export default function AnalyzeVoice() {
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <Server size={13} />
-                    <span>Analysis Engine: {isCloudLite ? 'Cloud Lite DSP Analysis (Neural Model Offline)' : (analysisContract.modelName || 'VoxGuard-AcousticNet-v3.0')}</span>
+                    <span>Analysis Engine: {isCloudLite ? 'Cloud Lite DSP Analysis' : 'Neural Anti-Spoofing Analysis'}</span>
                   </div>
                   {analysisContract.processingTime != null && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -350,6 +348,7 @@ export default function AnalyzeVoice() {
                     </div>
                   )}
                 </div>
+
               </div>
             </div>
           ) : (
@@ -726,12 +725,13 @@ export default function AnalyzeVoice() {
                   </div>
                   <div>
                     <span style={{ color: 'var(--text-muted)' }}>Deepfake AI:</span>{' '}
-                    <strong className="mono-text">{isCloudLite ? 'Bypassed (Cloud Lite)' : `${analysisContract.timing.deepfake_ms || 0}ms`}</strong>
+                    <strong className="mono-text">{analysisContract.timing?.deepfake_ms != null ? `${analysisContract.timing.deepfake_ms}ms` : (isCloudLite ? 'Bypassed (DSP)' : '0ms')}</strong>
                   </div>
                   <div>
                     <span style={{ color: 'var(--text-muted)' }}>Whisper STT:</span>{' '}
-                    <strong className="mono-text">{isCloudLite ? 'Bypassed (Cloud Lite)' : `${analysisContract.timing.stt_ms || 0}ms`}</strong>
+                    <strong className="mono-text">{analysisContract.transcription_available ? `${analysisContract.timing?.stt_ms || 0}ms` : 'Bypassed (Low-RAM)'}</strong>
                   </div>
+
                   <div>
                     <span style={{ color: 'var(--text-muted)' }}>Scam NLP:</span>{' '}
                     <strong className="mono-text">{analysisContract.timing.scam_ms || 0}ms</strong>

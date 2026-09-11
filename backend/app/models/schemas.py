@@ -38,8 +38,17 @@ class AnalysisResponse(BaseModel):
     finalRiskScore: int = Field(..., description="Deterministic aggregated cybersecurity risk score [0-100]")
     riskLevel: str = Field(..., description="Risk level key: safe, caution, suspicious, high, critical")
     reasons: List[str] = Field(default_factory=list, description="Forensic inspection acoustic indicators")
-    # Structured fields for unified risk engine (Requirement 9)
+    # Structured fields for unified risk engine and production contract
+    engine: Optional[str] = Field("onnx-acousticnet", description="Inference engine identifier")
     deepfake_probability: Optional[float] = None
+    authenticity_probability: Optional[float] = None
+    unified_risk_score: Optional[int] = None
+    confidence: Optional[float] = None
+    acoustic_metrics: Optional[Dict[str, Any]] = None
+    forensic_indicators: Optional[List[str]] = None
+    latency_ms: Optional[int] = None
+    scam_intent: Optional[Dict[str, Any]] = None
+    transcription_available: Optional[bool] = Field(False, description="Whether speech-to-text is available")
     speaker_match_score: Optional[float] = None
     scam_intent_score: Optional[float] = None
     scam_reasons: Optional[List[str]] = None
@@ -71,8 +80,16 @@ class LiveChunkResponse(BaseModel):
     scamReasons: List[str] = Field(default_factory=list, description="Detailed scam explainability reasons")
     isCriticalWarning: bool = Field(False, description="True if critical scam phrase detected (OTP/PIN/password/payment/remote access)")
     criticalWarningMessage: Optional[str] = Field(None, description="Critical warning message for prompt action")
-    # Structured fields for unified risk engine (Requirement 9)
+    # Structured fields for unified risk engine and production contract
+    engine: Optional[str] = Field("onnx-acousticnet", description="Inference engine identifier")
     deepfake_probability: Optional[float] = None
+    authenticity_probability: Optional[float] = None
+    unified_risk_score: Optional[int] = None
+    confidence: Optional[float] = None
+    acoustic_metrics: Optional[Dict[str, Any]] = None
+    forensic_indicators: Optional[List[str]] = None
+    latency_ms: Optional[int] = None
+    transcription_available: Optional[bool] = Field(False, description="Whether speech-to-text is available")
     speaker_match_score: Optional[float] = None
     scam_intent_score: Optional[float] = None
     scam_reasons: Optional[List[str]] = None
@@ -83,3 +100,4 @@ class LiveChunkResponse(BaseModel):
     reasons: List[str] = Field(default_factory=list, description="Key acoustic indicators detected in chunk")
     processingTime: int = Field(..., description="Inference latency in milliseconds")
     message: str = Field(..., description="Chunk status description")
+

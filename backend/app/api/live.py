@@ -64,59 +64,31 @@ async def analyze_live_chunk(
         # Stage 2: Forensic signal measurements
         features_dict, _ = ForensicFeatureExtractor.extract_features(audio, sample_rate)
 
-        if is_cloud_lite():
-            rms_val = features_dict.get("rms", 0.0)
-            elapsed_ms = int(round((time.perf_counter() - t0) * 1000))
-            return LiveChunkResponse(
-                chunkIndex=chunk_index or 0,
-                sessionId=session_id or "default-live-session",
-                timestamp=datetime.now(timezone.utc).isoformat(),
-                durationSec=duration,
-                deepfakeProbability=0.0,
-                authenticityScore="Authentic (DSP)",
-                classification="AUTHENTIC",
-                riskScore=10,
-                rollingThreatScore=10,
-                riskLevel="safe",
-                transcript="",
-                detectedIntents=[],
-                scamIntentScore=0.0,
-                scamCategory="LOW",
-                suspiciousPhrases=[],
-                scamReasons=[],
-                isCriticalWarning=False,
-                criticalWarningMessage=None,
-                deepfake_probability=0.0,
-                speaker_match_score=None,
-                scam_intent_score=0.0,
-                scam_reasons=[],
-                contributingSignals={},
-                neural_available=False,
-                rms=rms_val,
-                isAlert=False,
-                reasons=["Cloud-Lite DSP mode: Real-time neural live inspection disabled."],
-                processingTime=max(1, elapsed_ms),
-                message="Live chunk processed via cloud-lite-dsp."
-            )
-
-        # Full Mode: Neural Deepfake Detection & STT
+        # Stage 3: Deepfake anti-spoof model inference on chunk (ONNX or PyTorch or DSP Fallback)
         from services.deepfake_detector import DeepfakeDetectorService
-        from services.speech_transcriber import transcriber_service
-
-        # Stage 3: Deepfake model inference on chunk
         detector = DeepfakeDetectorService.get_instance()
         det_res = detector.predict(audio, forensic_features=features_dict)
         deepfake_prob = det_res["deepfakeProbability"]
+        neural_active = det_res.get("neural_available", False)
+        engine_name = det_res.get("engine", "onnx-acousticnet")
 
-        # Stage 4: Fast chunk transcription
-        stt_res = transcriber_service.transcribe(audio, sample_rate=sample_rate)
-        chunk_transcript = stt_res.get("transcript", "").strip()
+        # Stage 4: Fast chunk transcription (Faster-Whisper in full mode; bypassed in cloud-lite)
+        chunk_transcript = ""
+        if not is_cloud_lite():
+            try:
+                from services.speech_transcriber import transcriber_service
+                if transcriber_service.model is not None:
+                    stt_res = transcriber_service.transcribe(audio, sample_rate=sample_rate)
+                    chunk_transcript = stt_res.get("transcript", "").strip()
+            except Exception as stt_err:
+                logger.warning(f"[VoxGuard Live] Chunk transcription skipped: {stt_err}")
 
         # Update accumulated session transcript
         if chunk_transcript:
             session["accumulated_transcript"].append(chunk_transcript)
             if len(session["accumulated_transcript"]) > 8:
                 session["accumulated_transcript"].pop(0)
+
 
         # Stage 5: Scam Intent on chunk speech and accumulated session dialogue
         chunk_scam = scam_detector.analyze(chunk_transcript) if chunk_transcript else {
@@ -207,17 +179,27 @@ async def analyze_live_chunk(
             scamReasons=dialogue_scam.get("explanation", []),
             isCriticalWarning=is_critical,
             criticalWarningMessage=critical_msg,
+            engine=engine_name,
             deepfake_probability=deepfake_prob,
+            authenticity_probability=det_res.get("authenticityProbability", 100.0 - deepfake_prob),
+            unified_risk_score=final_rolling_score,
+            confidence=det_res.get("confidence", 50.0),
+            acoustic_metrics=features_dict,
+            forensic_indicators=chunk_fusion["reasons"],
+            latency_ms=elapsed_ms,
+            transcription_available=bool(chunk_transcript),
             speaker_match_score=None,
             scam_intent_score=scam_score,
             scam_reasons=dialogue_scam.get("explanation", []),
             contributingSignals=chunk_fusion.get("contributingSignals"),
+            neural_available=neural_active,
             rms=features_dict.get("rms", 0.0),
             isAlert=is_alert,
             reasons=chunk_fusion["reasons"],
             processingTime=elapsed_ms,
             message=msg
         )
+
 
     except Exception as e:
         logger.error(f"[VoxGuard Live] Error processing chunk: {e}", exc_info=True)

@@ -36,7 +36,13 @@ async def lifespan(app: FastAPI):
         logger.error(f"[VoxGuard] Database initialization error: {db_err}", exc_info=True)
 
     if is_cloud_lite():
-        logger.info("[VoxGuard] VOXGUARD_CLOUD_LITE=true: Heavy ML models (PyTorch, Whisper, AASIST) are completely bypassed.")
+        logger.info("[VoxGuard] VOXGUARD_CLOUD_LITE=true active (Render 512MB RAM constraint). Loading lightweight ONNX AcousticNet...")
+        try:
+            from services.deepfake_detector import DeepfakeDetectorService
+            detector = DeepfakeDetectorService.get_instance()
+            logger.info(f"[VoxGuard] Verified: {detector.model_version} initialized (Engine: {detector.engine}, Neural Active: {detector.neural_available}).")
+        except Exception as m_err:
+            logger.error(f"[VoxGuard] ONNX model initialization error: {m_err}", exc_info=True)
     else:
         # Full mode: Warm up ML models once into memory
         try:
@@ -119,29 +125,32 @@ app.include_router(settings_router)
 @app.get("/health")
 @app.get("/api/health")
 async def health_check():
-    if is_cloud_lite():
-        return {
-            "status": "ok",
-            "service": "VoxGuard AI",
-            "version": "3.0.0",
-            "mode": "cloud-lite",
-            "neural_available": False,
-            "engine": "cloud-lite-dsp"
-        }
-
     from services.deepfake_detector import DeepfakeDetectorService
-    from services.speech_transcriber import transcriber_service
     detector = DeepfakeDetectorService.get_instance()
+
+    stt_available = False
+    if not is_cloud_lite():
+        try:
+            from services.speech_transcriber import transcriber_service
+            stt_available = transcriber_service.model is not None
+        except Exception:
+            stt_available = False
+
     return {
         "status": "healthy",
         "service": "VoxGuard AI Forensic Inference Engine",
         "version": "3.0.0",
+        "engine": detector.engine,
+        "neural_available": detector.neural_available,
+        "transcription_available": stt_available,
+        "model_loaded": detector.neural_available,
+        "cloud_lite": is_cloud_lite(),
+        "memory_safe": True,
+        "mode": "cloud-lite" if is_cloud_lite() else "full",
         "modelVersion": detector.model_version,
-        "device": str(detector.device),
-        "sttAvailable": transcriber_service.model is not None,
-        "mode": "full",
-        "neural_available": True
+        "device": str(detector.device)
     }
+
 
 if __name__ == "__main__":
     import uvicorn

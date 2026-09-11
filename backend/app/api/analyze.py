@@ -54,138 +54,9 @@ async def analyze_audio_endpoint(
             sample_rate=sample_rate
         )
 
-        # Handle Cloud-Lite Mode: zero neural network imports or execution
-        if is_cloud_lite():
-            # Stage 3: Biometric Speaker Verification (Pure NumPy FFT)
-            t_spk_0 = time.perf_counter()
-            speaker_res = speaker_service.verify_speaker(
-                audio=audio_tensor,
-                target_speaker_id=speaker_id,
-                sample_rate=sample_rate
-            )
-            speaker_ms = int(round((time.perf_counter() - t_spk_0) * 1000))
-
-            # Stage 4: Risk Fusion based purely on DSP features and speaker identity
-            t_fus_0 = time.perf_counter()
-            scam_result = {
-                "scamIntentScore": 0.0,
-                "scamCategory": "LOW",
-                "detectedIntents": [],
-                "suspiciousPhrases": [],
-                "explanation": ["Lexical intent analysis unavailable in Cloud-Lite mode (Whisper bypassed)."]
-            }
-            stt_result = {
-                "transcript": "",
-                "detectedLanguage": "en",
-                "transcriptionConfidence": 0.0
-            }
-            fusion_result = RiskFusionEngine.compute_risk(
-                deepfake_prob=0.0,
-                scam_data=scam_result,
-                forensic_features=features_dict,
-                speaker_data=speaker_res
-            )
-            fusion_ms = int(round((time.perf_counter() - t_fus_0) * 1000))
-
-            total_ms = int(round((time.perf_counter() - t_start) * 1000))
-            timing_breakdown = {
-                "preprocessing_ms": preprocessing_ms,
-                "deepfake_ms": 0,
-                "stt_ms": 0,
-                "scam_ms": 0,
-                "speaker_ms": speaker_ms,
-                "fusion_ms": fusion_ms,
-                "total_ms": total_ms
-            }
-
-            combined_reasons = [
-                "Cloud-Lite DSP Engine: Neural inference (AASIST/Whisper) disabled (neural_available=false).",
-                *forensic_observations
-            ]
-            if speaker_res.get("enrolled"):
-                if speaker_res.get("speakerMatch") == "MATCH":
-                    combined_reasons.append(f"Trusted speaker verified: matches '{speaker_res.get('speakerName')}'.")
-                elif speaker_res.get("speakerMatch") == "MISMATCH":
-                    combined_reasons.append(f"Trusted speaker mismatch with '{speaker_res.get('speakerName')}'.")
-
-            session_id = f"LITE-{datetime.now().strftime('%y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
-            iso_timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-
-            try:
-                save_analysis({
-                    "id": session_id,
-                    "timestamp": iso_timestamp,
-                    "filename": file.filename,
-                    "duration": actual_duration,
-                    "sample_rate": sample_rate,
-                    "transcript": "",
-                    "detected_language": "en",
-                    "deepfake_prob": 0.0,
-                    "authenticity_prob": 100.0,
-                    "scam_score": 0.0,
-                    "detected_intents": [],
-                    "speaker_id": speaker_id if speaker_res.get("enrolled") else None,
-                    "speaker_name": speaker_res.get("speakerName"),
-                    "speaker_match": speaker_res["speakerMatch"],
-                    "speaker_similarity": speaker_res["speakerSimilarity"],
-                    "risk_score": fusion_result["finalRiskScore"],
-                    "risk_level": fusion_result["riskLevel"],
-                    "classification": "AUTHENTIC",
-                    "reasons": combined_reasons,
-                    "timing": timing_breakdown
-                })
-            except Exception as db_err:
-                logger.error(f"[VoxGuard API] Failed to persist cloud-lite analysis: {db_err}")
-
-            response_payload = AnalysisResponse(
-                analysisId=session_id,
-                fileName=file.filename,
-                fileSize=len(content),
-                durationSec=actual_duration,
-                sampleRate=sample_rate,
-                channels=1,
-                status="completed",
-                timestamp=datetime.now(timezone.utc).isoformat(),
-                deepfakeProbability=0.0,
-                authenticityProbability=100.0,
-                authenticityScore="Acoustic Signal Evaluated (DSP)",
-                classification="AUTHENTIC",
-                transcript="",
-                detectedLanguage="en",
-                transcriptionConfidence=0.0,
-                scamIntentScore=0.0,
-                scamCategory="LOW",
-                detectedIntents=[],
-                suspiciousPhrases=[],
-                scamReasons=["Neural transcription bypassed in cloud-lite mode."],
-                speakerMatch=speaker_res["speakerMatch"],
-                speakerSimilarity=speaker_res["speakerSimilarity"],
-                speakerName=speaker_res.get("speakerName"),
-                contextualRisk=fusion_result["contextualRisk"],
-                finalRiskScore=fusion_result["finalRiskScore"],
-                riskLevel=fusion_result["riskLevel"],
-                reasons=combined_reasons,
-                deepfake_probability=0.0,
-                speaker_match_score=speaker_res["speakerSimilarity"],
-                scam_intent_score=0.0,
-                scam_reasons=[],
-                contributingSignals=fusion_result.get("contributingSignals"),
-                features=ForensicFeatures(**features_dict),
-                modelName="cloud-lite-dsp",
-                modelVersion="1.0.0-dsp",
-                neural_available=False,
-                processingTime=total_ms,
-                timing=timing_breakdown,
-                message="DSP acoustic analysis completed. Neural model unavailable in Cloud-Lite mode."
-            )
-            return response_payload
-
-        # Full Mode: Execute PyTorch CNN and Faster-Whisper pipeline
-        from services.deepfake_detector import DeepfakeDetectorService
-        from services.speech_transcriber import transcriber_service
-
-        # Stage 3: Deepfake Neural Inference (AcousticNet CNN)
+        # Stage 3: Deepfake Anti-Spoofing Inference (ONNX AcousticNet or PyTorch or DSP Fallback)
         t_df_0 = time.perf_counter()
+        from services.deepfake_detector import DeepfakeDetectorService
         detector = DeepfakeDetectorService.get_instance()
         detection_result = detector.predict(
             audio=audio_tensor,
@@ -194,17 +65,44 @@ async def analyze_audio_endpoint(
         )
         deepfake_ms = int(round((time.perf_counter() - t_df_0) * 1000))
 
-        # Stage 4: Speech-to-Text Transcription (faster-whisper)
+        # Stage 4: Speech-to-Text Transcription (Faster-Whisper if available; cleanly bypassed on Render Free)
         t_stt_0 = time.perf_counter()
-        stt_result = transcriber_service.transcribe(audio_tensor, sample_rate=sample_rate)
-        stt_ms = int(round((time.perf_counter() - t_stt_0) * 1000))
+        stt_result = {
+            "transcript": "",
+            "detectedLanguage": "en",
+            "transcriptionConfidence": 0.0
+        }
+        stt_ms = 0
+        if not is_cloud_lite():
+            try:
+                from services.speech_transcriber import transcriber_service
+                if transcriber_service.model is not None:
+                    stt_result = transcriber_service.transcribe(audio_tensor, sample_rate=sample_rate)
+                    stt_ms = int(round((time.perf_counter() - t_stt_0) * 1000))
+            except Exception as stt_err:
+                logger.warning(f"[VoxGuard API] Transcription skipped: {stt_err}")
 
-        # Stage 5: Scam Intent Detection (12 categories)
+        # Stage 5: Scam Intent Detection (Lexical analysis if transcript present)
         t_scam_0 = time.perf_counter()
-        scam_result = scam_detector.analyze(stt_result["transcript"])
-        scam_ms = int(round((time.perf_counter() - t_scam_0) * 1000))
+        if stt_result.get("transcript"):
+            scam_result = scam_detector.analyze(stt_result["transcript"])
+            scam_ms = int(round((time.perf_counter() - t_scam_0) * 1000))
+        else:
+            scam_explanation = (
+                ["Lexical intent analysis unavailable: Transcription bypassed on low-memory cloud profile (Render 512MB RAM constraint)."]
+                if is_cloud_lite() else
+                ["No audible speech detected for conversational deception analysis."]
+            )
+            scam_result = {
+                "scamIntentScore": 0.0,
+                "scamCategory": "LOW",
+                "detectedIntents": [],
+                "suspiciousPhrases": [],
+                "explanation": scam_explanation
+            }
+            scam_ms = 0
 
-        # Stage 6: Biometric Speaker Verification
+        # Stage 6: Biometric Speaker Verification (NumPy FFT Cosine Similarity)
         t_spk_0 = time.perf_counter()
         speaker_res = speaker_service.verify_speaker(
             audio=audio_tensor,
@@ -213,7 +111,7 @@ async def analyze_audio_endpoint(
         )
         speaker_ms = int(round((time.perf_counter() - t_spk_0) * 1000))
 
-        # Stage 7: Deterministic Risk Fusion
+        # Stage 7: Deterministic Risk Fusion Engine
         t_fus_0 = time.perf_counter()
         fusion_result = RiskFusionEngine.compute_risk(
             deepfake_prob=detection_result["deepfakeProbability"],
@@ -235,14 +133,30 @@ async def analyze_audio_endpoint(
             "total_ms": total_ms
         }
 
-        # Combine explainable reasons
+        # Build Explainability Indicators
         combined_reasons = []
-        for r in fusion_result["reasons"]:
+        if detection_result.get("neural_available"):
+            combined_reasons.append(
+                f"Neural Anti-Spoofing: AcousticNet spectro-temporal CNN analyzed voice authenticity ({detection_result['deepfakeProbability']}% synthetic probability)."
+            )
+        else:
+            combined_reasons.append(
+                "Cloud Lite DSP Engine: Real acoustic signal feature extraction verified (neural fallback active)."
+            )
+
+        for obs in forensic_observations:
+            if obs not in combined_reasons:
+                combined_reasons.append(obs)
+
+        for r in fusion_result.get("reasons", []):
             if r not in combined_reasons:
                 combined_reasons.append(r)
-        for r in scam_result["explanation"]:
-            if r not in combined_reasons and "No audible speech" not in r:
-                combined_reasons.append(r)
+
+        if speaker_res.get("enrolled"):
+            if speaker_res.get("speakerMatch") == "MATCH":
+                combined_reasons.append(f"Trusted speaker verified: matches '{speaker_res.get('speakerName')}'.")
+            elif speaker_res.get("speakerMatch") == "MISMATCH":
+                combined_reasons.append(f"Trusted speaker mismatch with '{speaker_res.get('speakerName')}'.")
 
         session_id = f"ANL-{datetime.now().strftime('%y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
         iso_timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
@@ -274,6 +188,10 @@ async def analyze_audio_endpoint(
         except Exception as db_err:
             logger.error(f"[VoxGuard API] Failed to persist analysis to SQLite: {db_err}", exc_info=True)
 
+        engine_name = detection_result.get("engine", "onnx-acousticnet")
+        neural_active = bool(detection_result.get("neural_available"))
+        stt_active = bool(stt_result.get("transcript"))
+
         response_payload = AnalysisResponse(
             analysisId=session_id,
             fileName=file.filename,
@@ -287,14 +205,14 @@ async def analyze_audio_endpoint(
             authenticityProbability=detection_result["authenticityProbability"],
             authenticityScore=detection_result["authenticityScore"],
             classification=detection_result["classification"],
-            transcript=stt_result["transcript"],
-            detectedLanguage=stt_result["detectedLanguage"],
-            transcriptionConfidence=stt_result["transcriptionConfidence"],
-            scamIntentScore=scam_result["scamIntentScore"],
+            transcript=stt_result.get("transcript", ""),
+            detectedLanguage=stt_result.get("detectedLanguage", "en"),
+            transcriptionConfidence=stt_result.get("transcriptionConfidence", 0.0),
+            scamIntentScore=scam_result.get("scamIntentScore", 0.0),
             scamCategory=scam_result.get("scamCategory", "LOW"),
-            detectedIntents=scam_result["detectedIntents"],
-            suspiciousPhrases=scam_result["suspiciousPhrases"],
-            scamReasons=scam_result["explanation"],
+            detectedIntents=scam_result.get("detectedIntents", []),
+            suspiciousPhrases=scam_result.get("suspiciousPhrases", []),
+            scamReasons=scam_result.get("explanation", []),
             speakerMatch=speaker_res["speakerMatch"],
             speakerSimilarity=speaker_res["speakerSimilarity"],
             speakerName=speaker_res.get("speakerName"),
@@ -302,23 +220,38 @@ async def analyze_audio_endpoint(
             finalRiskScore=fusion_result["finalRiskScore"],
             riskLevel=fusion_result["riskLevel"],
             reasons=combined_reasons,
+            # Structured snake_case & user requested fields
+            engine=engine_name,
             deepfake_probability=detection_result["deepfakeProbability"],
+            authenticity_probability=detection_result["authenticityProbability"],
+            unified_risk_score=fusion_result["finalRiskScore"],
+            risk_level=fusion_result["riskLevel"],
+            confidence=detection_result.get("confidence", 50.0),
+            acoustic_metrics=features_dict,
+            forensic_indicators=combined_reasons,
+            latency_ms=total_ms,
+            scam_intent=scam_result,
+            transcription_available=stt_active,
             speaker_match_score=speaker_res["speakerSimilarity"],
-            scam_intent_score=scam_result["scamIntentScore"],
-            scam_reasons=scam_result["explanation"],
+            scam_intent_score=scam_result.get("scamIntentScore", 0.0),
+            scam_reasons=scam_result.get("explanation", []),
             contributingSignals=fusion_result.get("contributingSignals"),
             features=ForensicFeatures(**features_dict),
             modelName=detection_result["modelName"],
             modelVersion=detection_result["modelVersion"],
+            neural_available=neural_active,
             processingTime=total_ms,
             timing=timing_breakdown,
-            message=combined_reasons[0] if combined_reasons else "Analysis complete."
+            message=(
+                f"{'Neural Anti-Spoofing Analysis' if neural_active else 'Cloud Lite DSP Analysis'} completed. "
+                f"Risk: {fusion_result['finalRiskScore']}/100 ({fusion_result['riskLevel'].upper()})."
+            )
         )
 
         logger.info(
-            f"[VoxGuard API] Successfully analyzed '{file.filename}': "
-            f"Risk={response_payload.finalRiskScore}/100, Deepfake={response_payload.deepfakeProbability}%, "
-            f"Scam={response_payload.scamIntentScore}%, Latency={total_ms}ms"
+            f"[VoxGuard API] Analysis complete for '{file.filename}': "
+            f"Engine={engine_name}, Neural={neural_active}, Deepfake={response_payload.deepfakeProbability}%, "
+            f"Risk={response_payload.finalRiskScore}/100, Latency={total_ms}ms"
         )
         return response_payload
 
