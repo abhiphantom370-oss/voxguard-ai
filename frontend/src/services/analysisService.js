@@ -7,13 +7,11 @@
 import { validateAudioFile } from './audioService';
 import { getExtensionFromMime } from '../utils/audioUtils';
 
-// When on HTTPS, avoid mixed-content errors by ignoring http: custom base URLs in favor of the Vite dev proxy
-const isPageHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
-const configuredBase = (
-  import.meta.env.VITE_API_BASE_URL &&
-  (!isPageHttps || import.meta.env.VITE_API_BASE_URL.startsWith('https:'))
-)
-  ? import.meta.env.VITE_API_BASE_URL.replace(/\/+$/, '')
+// Base URL configuration: in production, reads VITE_API_BASE_URL.
+// In local development, falls back to relative paths routed through Vite dev proxy.
+const rawBaseUrl = import.meta.env.VITE_API_BASE_URL;
+const configuredBase = (rawBaseUrl && rawBaseUrl.trim())
+  ? rawBaseUrl.trim().replace(/\/+$/, '')
   : '';
 
 async function apiRequest(endpoint, options = {}) {
@@ -22,16 +20,16 @@ async function apiRequest(endpoint, options = {}) {
   try {
     response = await fetch(primaryUrl, options);
   } catch (primaryErr) {
-    if (!configuredBase && !isPageHttps) {
-      // In local dev without explicit VITE_API_BASE_URL and on HTTP, fallback to direct localhost:8000
-      const directUrl = `http://127.0.0.1:8000${endpoint}`;
+    if (!configuredBase) {
+      // In local development without explicit VITE_API_BASE_URL, fallback to direct localhost:8000
+      const directUrl = `http://localhost:8000${endpoint}`;
       try {
         response = await fetch(directUrl, options);
       } catch (directErr) {
-        throw new Error('Unable to connect to VoxGuard inference backend at http://127.0.0.1:8000.');
+        throw new Error('Unable to connect to VoxGuard inference backend at http://localhost:8000.');
       }
     } else {
-      throw new Error(`Unable to connect to VoxGuard inference backend (attempted ${primaryUrl}).`);
+      throw new Error(`Unable to connect to VoxGuard inference backend at ${configuredBase}.`);
     }
   }
 

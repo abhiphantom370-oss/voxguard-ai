@@ -14,19 +14,22 @@ class SpeechTranscriberService:
     _instance: Optional["SpeechTranscriberService"] = None
 
     def __init__(self):
-        self.model_name = "faster-whisper-tiny-int8"
-        self.device = "cpu"
+        import os
+        selected_model = os.environ.get("WHISPER_MODEL", "tiny")
+        self.model_name = f"faster-whisper-{selected_model}-int8"
+        self.device = os.environ.get("MODEL_DEVICE", "cpu")
         self.compute_type = "int8"
         self.model = None
 
-        logger.info(f"[VoxGuard STT] Initializing {self.model_name} on {self.device}...")
+        logger.info(f"[VoxGuard STT] Initializing {self.model_name} (model='{selected_model}', device='{self.device}', compute='{self.compute_type}')...")
         t0 = time.time()
         try:
             from faster_whisper import WhisperModel
-            self.model = WhisperModel("tiny", device=self.device, compute_type=self.compute_type)
-            logger.info(f"[VoxGuard STT] {self.model_name} loaded successfully in {time.time() - t0:.2f}s.")
+            cache_dir = os.environ.get("WHISPER_CACHE_DIR")
+            self.model = WhisperModel(selected_model, device=self.device, compute_type=self.compute_type, download_root=cache_dir)
+            logger.info(f"[VoxGuard STT] {self.model_name} loaded successfully into memory in {time.time() - t0:.2f}s.")
         except Exception as e:
-            logger.error(f"[VoxGuard STT] Failed to initialize Whisper model: {e}", exc_info=True)
+            logger.error(f"[VoxGuard STT] Failed to initialize Whisper model '{selected_model}': {e}", exc_info=True)
             self.model = None
 
     @classmethod

@@ -56,16 +56,36 @@ class DeepfakeDetectorService:
     _instance = None
 
     def __init__(self):
+        import os
         self.model_version = "VoxGuard-AcousticNet-v3.0-PyTorch"
-        self.device = torch.device("cpu")
+        device_str = os.environ.get("MODEL_DEVICE", "cpu")
+        self.device = torch.device(device_str)
         self.n_mels = 64
         self.n_fft = 512
         self.hop_length = 256
         self.sample_rate = 16000
 
-        logger.info(f"[VoxGuard Detector] Initializing {self.model_version} on {self.device}...")
+        logger.info(f"[VoxGuard Detector] Initializing {self.model_version} on device: {self.device}...")
         self.model = AcousticNetAntiSpoof().to(self.device)
         self.model.eval()
+
+        weights_path = os.environ.get("AASIST_WEIGHTS_PATH")
+        if weights_path and weights_path.strip():
+            weights_file = os.path.abspath(weights_path.strip())
+            if not os.path.isfile(weights_file):
+                err_msg = f"[VoxGuard Detector] Required AASIST model weights file not found: {weights_file}"
+                logger.error(err_msg)
+                raise FileNotFoundError(err_msg)
+            try:
+                logger.info(f"[VoxGuard Detector] Loading custom weights from: {weights_file}...")
+                self.model.load_state_dict(torch.load(weights_file, map_location=self.device, weights_only=True))
+                logger.info(f"[VoxGuard Detector] Custom weights loaded and verified successfully.")
+            except Exception as w_err:
+                err_msg = f"[VoxGuard Detector] Failed to load model weights from {weights_file}: {w_err}"
+                logger.error(err_msg, exc_info=True)
+                raise RuntimeError(err_msg) from w_err
+        else:
+            logger.info(f"[VoxGuard Detector] Verified: Built-in AcousticNet anti-spoofing neural architecture loaded.")
 
         # Warm-up inference once so first request is instantaneous
         dummy_input = torch.zeros((1, 1, self.n_mels, 128), dtype=torch.float32, device=self.device)

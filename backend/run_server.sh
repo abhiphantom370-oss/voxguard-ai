@@ -10,5 +10,7 @@ if [ ! -d "venv" ]; then
 fi
 
 export PYTHONPATH="app:$PYTHONPATH"
-echo "[VoxGuard] Starting FastAPI backend on http://127.0.0.1:8000..."
-exec ./venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+HOST="${HOST:-0.0.0.0}"
+PORT="${PORT:-8000}"
+echo "[VoxGuard] Starting FastAPI backend on http://${HOST}:${PORT}..."
+exec ./venv/bin/uvicorn app.main:app --host "$HOST" --port "$PORT" --reload

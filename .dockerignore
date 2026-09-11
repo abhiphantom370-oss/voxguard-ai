@@ -1,0 +1,11 @@
+# Docker build exclusions
+frontend/node_modules/
+frontend/dist/
+frontend/certs/
+backend/venv/
+backend/__pycache__/
+.git/
+.DS_Store
+*.pem
+*.key
+*.crt

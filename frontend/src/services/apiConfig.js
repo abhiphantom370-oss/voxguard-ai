@@ -3,13 +3,14 @@
  * Supports local proxy development and deployed HTTPS backend via VITE_API_BASE_URL.
  */
 
+const rawBaseUrl = import.meta.env.VITE_API_BASE_URL;
 const isPageHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
+
 export const API_BASE_URL = (
-  import.meta.env.VITE_API_BASE_URL &&
-  (!isPageHttps || import.meta.env.VITE_API_BASE_URL.startsWith('https:'))
-    ? import.meta.env.VITE_API_BASE_URL
+  rawBaseUrl && rawBaseUrl.trim()
+    ? rawBaseUrl.trim().replace(/\/+$/, '')
     : (isPageHttps ? '' : 'http://localhost:8000')
-).replace(/\/+$/, '');
+);
 
 export const ENDPOINTS = {
   HEALTH: `${API_BASE_URL}/health`,

@@ -1,8 +1,15 @@
+import sys
+import os
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+
+# Ensure backend/app directory is in sys.path for internal module imports
+app_dir = os.path.dirname(os.path.abspath(__file__))
+if app_dir not in sys.path:
+    sys.path.insert(0, app_dir)
 
 from utils.logging import setup_logging
 from db.database import init_db
@@ -31,13 +38,15 @@ async def lifespan(app: FastAPI):
 
     try:
         detector = DeepfakeDetectorService.get_instance()
-        logger.info(f"[VoxGuard] AcousticNet {detector.model_version} warmed up.")
+        logger.info(f"[VoxGuard] Verified: AcousticNet {detector.model_version} on {detector.device} warmed up.")
     except Exception as m_err:
-        logger.error(f"[VoxGuard] Deepfake detector load error: {m_err}", exc_info=True)
+        logger.error(f"[VoxGuard Startup Error] Deepfake detector model initialization failed: {m_err}", exc_info=True)
 
     try:
-        _ = transcriber_service
-        logger.info(f"[VoxGuard] Speech transcription service initialized.")
+        if transcriber_service.model is not None:
+            logger.info(f"[VoxGuard] Verified: Faster-Whisper ({transcriber_service.model_name}) cached in memory.")
+        else:
+            logger.warning("[VoxGuard] Faster-Whisper model could not be loaded into memory.")
     except Exception as s_err:
         logger.error(f"[VoxGuard] STT service load error: {s_err}", exc_info=True)
 
@@ -52,18 +61,32 @@ app = FastAPI(
 )
 
 # CORS Configuration
-origins = [
+default_origins = [
     "http://localhost:5173",
     "http://localhost:5174",
+    "http://localhost:5175",
     "http://127.0.0.1:5173",
     "http://127.0.0.1:5174",
-    "*"
+    "http://127.0.0.1:5175",
+    "https://localhost:5175",
+    "https://127.0.0.1:5175"
 ]
 
+import os
+env_origins = os.environ.get("ALLOWED_ORIGINS", "")
+if env_origins.strip():
+    configured_origins = [orig.strip() for orig in env_origins.split(",") if orig.strip()]
+    for dev_orig in default_origins:
+        if dev_orig not in configured_origins:
+            configured_origins.append(dev_orig)
+else:
+    configured_origins = default_origins
+
+has_wildcard = "*" in configured_origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
+    allow_origins=configured_origins,
+    allow_credentials=not has_wildcard,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -85,7 +108,7 @@ app.include_router(reports_router)
 app.include_router(speakers_router)
 app.include_router(settings_router)
 
-# Health Check Endpoints
+# Health Check Endpoints - lightweight and public
 @app.get("/health")
 @app.get("/api/health")
 async def health_check():
@@ -101,5 +124,8 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-    logger.info("[VoxGuard] Launching uvicorn on http://127.0.0.1:8000...")
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+    bind_host = os.environ.get("HOST", "0.0.0.0")
+    bind_port = int(os.environ.get("PORT", "8000"))
+    is_debug = os.environ.get("DEBUG", "False").lower() in ("true", "1")
+    logger.info(f"[VoxGuard] Launching uvicorn on http://{bind_host}:{bind_port} (debug={is_debug})...")
+    uvicorn.run("app.main:app", host=bind_host, port=bind_port, reload=is_debug)
