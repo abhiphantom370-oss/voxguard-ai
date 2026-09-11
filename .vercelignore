@@ -1,0 +1,5 @@
+# Exclude backend and local assets from Vercel deployments
+backend/
+test_assets/
+*.pem
+.env.local
