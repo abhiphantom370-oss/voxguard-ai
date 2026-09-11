@@ -65,7 +65,7 @@ async def analyze_audio_endpoint(
         )
         deepfake_ms = int(round((time.perf_counter() - t_df_0) * 1000))
 
-        # Stage 4: Speech-to-Text Transcription (Faster-Whisper if available; cleanly bypassed on Render Free)
+        # Stage 4: Speech-to-Text Transcription (pywhispercpp tiny.en-q5_1 or faster-whisper)
         t_stt_0 = time.perf_counter()
         stt_result = {
             "transcript": "",
@@ -73,14 +73,13 @@ async def analyze_audio_endpoint(
             "transcriptionConfidence": 0.0
         }
         stt_ms = 0
-        if not is_cloud_lite():
-            try:
-                from services.speech_transcriber import transcriber_service
-                if transcriber_service.model is not None:
-                    stt_result = transcriber_service.transcribe(audio_tensor, sample_rate=sample_rate)
-                    stt_ms = int(round((time.perf_counter() - t_stt_0) * 1000))
-            except Exception as stt_err:
-                logger.warning(f"[VoxGuard API] Transcription skipped: {stt_err}")
+        try:
+            from services.speech_transcriber import transcriber_service
+            if transcriber_service.is_available:
+                stt_result = transcriber_service.transcribe(audio_tensor, sample_rate=sample_rate)
+                stt_ms = int(round((time.perf_counter() - t_stt_0) * 1000))
+        except Exception as stt_err:
+            logger.warning(f"[VoxGuard API] Transcription skipped: {stt_err}")
 
         # Stage 5: Scam Intent Detection (Lexical analysis if transcript present)
         t_scam_0 = time.perf_counter()
@@ -88,17 +87,27 @@ async def analyze_audio_endpoint(
             scam_result = scam_detector.analyze(stt_result["transcript"])
             scam_ms = int(round((time.perf_counter() - t_scam_0) * 1000))
         else:
-            scam_explanation = (
-                ["Lexical intent analysis unavailable: Transcription bypassed on low-memory cloud profile (Render 512MB RAM constraint)."]
-                if is_cloud_lite() else
-                ["No audible speech detected for conversational deception analysis."]
-            )
+            empty_sensitive = {
+                "otp_detected": False,
+                "pin_detected": False,
+                "cvv_detected": False,
+                "upi_pin_detected": False,
+                "password_detected": False,
+                "payment_transfer_detected": False,
+                "impersonation_detected": False,
+                "urgency_detected": False,
+                "sensitive_request": False
+            }
             scam_result = {
                 "scamIntentScore": 0.0,
                 "scamCategory": "LOW",
                 "detectedIntents": [],
                 "suspiciousPhrases": [],
-                "explanation": scam_explanation
+                "sensitive_indicators": empty_sensitive,
+                "sensitiveIndicators": empty_sensitive,
+                "isCriticalWarning": False,
+                "criticalWarningMessage": None,
+                "explanation": ["No audible speech detected for conversational deception analysis."]
             }
             scam_ms = 0
 
@@ -231,6 +240,8 @@ async def analyze_audio_endpoint(
             forensic_indicators=combined_reasons,
             latency_ms=total_ms,
             scam_intent=scam_result,
+            sensitive_indicators=scam_result.get("sensitive_indicators"),
+            sensitiveIndicators=scam_result.get("sensitiveIndicators"),
             transcription_available=stt_active,
             speaker_match_score=speaker_res["speakerSimilarity"],
             scam_intent_score=scam_result.get("scamIntentScore", 0.0),
@@ -247,6 +258,9 @@ async def analyze_audio_endpoint(
                 f"Risk: {fusion_result['finalRiskScore']}/100 ({fusion_result['riskLevel'].upper()})."
             )
         )
+
+        import gc
+        gc.collect()
 
         logger.info(
             f"[VoxGuard API] Analysis complete for '{file.filename}': "

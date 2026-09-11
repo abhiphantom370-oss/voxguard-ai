@@ -30,7 +30,20 @@ def get_or_create_session(session_id: str) -> Dict[str, Any]:
             "chunk_count": 0,
             "rolling_threat_score": 10.0,
             "accumulated_transcript": [],
+            "accumulated_audio": [],
+            "last_dialogue_transcript": "",
             "all_intents": set(),
+            "sensitive_indicators": {
+                "otp_detected": False,
+                "pin_detected": False,
+                "cvv_detected": False,
+                "upi_pin_detected": False,
+                "password_detected": False,
+                "payment_transfer_detected": False,
+                "impersonation_detected": False,
+                "urgency_detected": False,
+                "sensitive_request": False
+            },
             "last_updated": now
         }
     _active_sessions[session_id]["last_updated"] = now
@@ -72,57 +85,81 @@ async def analyze_live_chunk(
         neural_active = det_res.get("neural_available", False)
         engine_name = det_res.get("engine", "onnx-acousticnet")
 
-        # Stage 4: Fast chunk transcription (Faster-Whisper in full mode; bypassed in cloud-lite)
+        # Accumulate audio in session (maintain rolling buffer of up to 4 chunks ~10s)
+        session.setdefault("accumulated_audio", []).append(audio)
+        if len(session["accumulated_audio"]) > 4:
+            session["accumulated_audio"].pop(0)
+
+        # Stage 4: Rolling Speech-to-Text transcription
+        # Run transcription on chunk 1 and every 3 chunks thereafter (~7.5s intervals)
         chunk_transcript = ""
-        if not is_cloud_lite():
-            try:
-                from services.speech_transcriber import transcriber_service
-                if transcriber_service.model is not None:
-                    stt_res = transcriber_service.transcribe(audio, sample_rate=sample_rate)
-                    chunk_transcript = stt_res.get("transcript", "").strip()
-            except Exception as stt_err:
-                logger.warning(f"[VoxGuard Live] Chunk transcription skipped: {stt_err}")
+        should_transcribe = (session["chunk_count"] == 1) or (session["chunk_count"] % 3 == 0)
+        try:
+            from services.speech_transcriber import transcriber_service
+            if transcriber_service.is_available and should_transcribe and session["accumulated_audio"]:
+                import numpy as np
+                rolling_audio = np.concatenate(session["accumulated_audio"])
+                stt_res = transcriber_service.transcribe(rolling_audio, sample_rate=sample_rate)
+                transcribed_text = stt_res.get("transcript", "").strip()
+                if transcribed_text:
+                    session["last_dialogue_transcript"] = transcribed_text
+                    chunk_transcript = transcribed_text
+        except Exception as stt_err:
+            logger.warning(f"[VoxGuard Live] Rolling transcription error: {stt_err}")
 
-        # Update accumulated session transcript
-        if chunk_transcript:
-            session["accumulated_transcript"].append(chunk_transcript)
-            if len(session["accumulated_transcript"]) > 8:
-                session["accumulated_transcript"].pop(0)
+        current_dialogue = session.get("last_dialogue_transcript", "") or chunk_transcript
 
-
-        # Stage 5: Scam Intent on chunk speech and accumulated session dialogue
-        chunk_scam = scam_detector.analyze(chunk_transcript) if chunk_transcript else {
+        # Stage 5: Scam Intent & Sensitive Request Detection on dialogue
+        dialogue_scam = scam_detector.analyze(current_dialogue) if current_dialogue else {
             "scamIntentScore": 0.0,
             "scamCategory": "LOW",
             "detectedIntents": [],
             "suspiciousPhrases": [],
             "explanation": [],
             "isCriticalWarning": False,
-            "criticalWarningMessage": None
+            "criticalWarningMessage": None,
+            "sensitive_indicators": session.get("sensitive_indicators")
         }
 
-        recent_dialogue = " ".join(session["accumulated_transcript"])
-        dialogue_scam = scam_detector.analyze(recent_dialogue) if recent_dialogue else chunk_scam
+        scam_score = dialogue_scam["scamIntentScore"]
+        scam_cat = dialogue_scam["scamCategory"]
 
-        scam_score = max(chunk_scam["scamIntentScore"], dialogue_scam["scamIntentScore"])
-        scam_cat = scam_detector.get_category_tier(scam_score)
-
-        for intent in (chunk_scam.get("detectedIntents", []) + dialogue_scam.get("detectedIntents", [])):
+        for intent in dialogue_scam.get("detectedIntents", []):
             session["all_intents"].add(intent)
 
-        # Merge suspicious phrases preserving uniqueness
+        # Update persistent session sensitive request flags
+        cur_sens = session.setdefault("sensitive_indicators", {
+            "otp_detected": False,
+            "pin_detected": False,
+            "cvv_detected": False,
+            "upi_pin_detected": False,
+            "password_detected": False,
+            "payment_transfer_detected": False,
+            "impersonation_detected": False,
+            "urgency_detected": False,
+            "sensitive_request": False
+        })
+        if dialogue_scam.get("sensitive_indicators"):
+            for k, v in dialogue_scam["sensitive_indicators"].items():
+                if v:
+                    cur_sens[k] = True
+            if any(cur_sens[k] for k in ["otp_detected", "pin_detected", "cvv_detected", "upi_pin_detected", "password_detected", "payment_transfer_detected", "impersonation_detected", "urgency_detected"]):
+                cur_sens["sensitive_request"] = True
+
         merged_phrases = []
-        for p in (chunk_scam.get("suspiciousPhrases", []) + dialogue_scam.get("suspiciousPhrases", [])):
+        for p in dialogue_scam.get("suspiciousPhrases", []):
             if not any(mp["phrase"].lower() == p["phrase"].lower() for mp in merged_phrases):
                 merged_phrases.append(p)
 
-        is_critical = chunk_scam.get("isCriticalWarning", False) or dialogue_scam.get("isCriticalWarning", False)
-        critical_msg = chunk_scam.get("criticalWarningMessage") or dialogue_scam.get("criticalWarningMessage")
+        is_critical = dialogue_scam.get("isCriticalWarning", False) or cur_sens.get("sensitive_request", False)
+        critical_msg = dialogue_scam.get("criticalWarningMessage")
+        if not critical_msg and is_critical:
+            critical_msg = "CRITICAL SECURITY ALERT: Sensitive credential / payment solicitation in conversational stream!"
 
         # Stage 6: Risk Fusion for this chunk
         chunk_fusion = RiskFusionEngine.compute_risk(
             deepfake_prob=deepfake_prob,
-            scam_data=dialogue_scam if dialogue_scam["scamIntentScore"] >= chunk_scam["scamIntentScore"] else chunk_scam,
+            scam_data=dialogue_scam,
             forensic_features=features_dict,
             speaker_data=None
         )
@@ -160,7 +197,7 @@ async def analyze_live_chunk(
             live_risk_level = "safe"
             msg = "STREAM NORMAL: Natural human speech characteristics verified."
 
-        return LiveChunkResponse(
+        resp = LiveChunkResponse(
             chunkIndex=chunk_index or session["chunk_count"],
             sessionId=session_id,
             timestamp=datetime.now(timezone.utc).isoformat(),
@@ -171,7 +208,7 @@ async def analyze_live_chunk(
             riskScore=instant_risk,
             rollingThreatScore=final_rolling_score,
             riskLevel=live_risk_level,
-            transcript=chunk_transcript,
+            transcript=current_dialogue,
             detectedIntents=list(session["all_intents"]),
             scamIntentScore=scam_score,
             scamCategory=scam_cat,
@@ -187,7 +224,9 @@ async def analyze_live_chunk(
             acoustic_metrics=features_dict,
             forensic_indicators=chunk_fusion["reasons"],
             latency_ms=elapsed_ms,
-            transcription_available=bool(chunk_transcript),
+            sensitive_indicators=cur_sens,
+            sensitiveIndicators=cur_sens,
+            transcription_available=bool(current_dialogue),
             speaker_match_score=None,
             scam_intent_score=scam_score,
             scam_reasons=dialogue_scam.get("explanation", []),
@@ -200,10 +239,26 @@ async def analyze_live_chunk(
             message=msg
         )
 
+        import gc
+        gc.collect()
+
+        return resp
+
 
     except Exception as e:
         logger.error(f"[VoxGuard Live] Error processing chunk: {e}", exc_info=True)
         elapsed_ms = int(round((time.perf_counter() - t0) * 1000))
+        empty_sens = {
+            "otp_detected": False,
+            "pin_detected": False,
+            "cvv_detected": False,
+            "upi_pin_detected": False,
+            "password_detected": False,
+            "payment_transfer_detected": False,
+            "impersonation_detected": False,
+            "urgency_detected": False,
+            "sensitive_request": False
+        }
         return LiveChunkResponse(
             chunkIndex=chunk_index or 0,
             sessionId=session_id,
@@ -223,6 +278,9 @@ async def analyze_live_chunk(
             scamReasons=[],
             isCriticalWarning=False,
             criticalWarningMessage=None,
+            sensitive_indicators=empty_sens,
+            sensitiveIndicators=empty_sens,
+            transcription_available=False,
             deepfake_probability=5.0,
             speaker_match_score=None,
             scam_intent_score=0.0,

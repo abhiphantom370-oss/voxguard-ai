@@ -30,3 +30,6 @@ dist/
 # Local development certificates
 frontend/certs/
 *.pem
+
+# Scratch files
+scratch/

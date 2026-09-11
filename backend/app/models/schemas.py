@@ -48,6 +48,8 @@ class AnalysisResponse(BaseModel):
     forensic_indicators: Optional[List[str]] = None
     latency_ms: Optional[int] = None
     scam_intent: Optional[Dict[str, Any]] = None
+    sensitive_indicators: Optional[Dict[str, Any]] = None
+    sensitiveIndicators: Optional[Dict[str, Any]] = None
     transcription_available: Optional[bool] = Field(False, description="Whether speech-to-text is available")
     speaker_match_score: Optional[float] = None
     scam_intent_score: Optional[float] = None
@@ -89,7 +91,10 @@ class LiveChunkResponse(BaseModel):
     acoustic_metrics: Optional[Dict[str, Any]] = None
     forensic_indicators: Optional[List[str]] = None
     latency_ms: Optional[int] = None
+    sensitive_indicators: Optional[Dict[str, Any]] = None
+    sensitiveIndicators: Optional[Dict[str, Any]] = None
     transcription_available: Optional[bool] = Field(False, description="Whether speech-to-text is available")
+
     speaker_match_score: Optional[float] = None
     scam_intent_score: Optional[float] = None
     scam_reasons: Optional[List[str]] = None

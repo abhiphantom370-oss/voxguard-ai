@@ -760,6 +760,46 @@ export default function LiveDetection() {
                 ))}
               </div>
             )}
+
+            {/* Live Sensitive Request Indicators */}
+            {(() => {
+              const sens = canonicalLiveResult?.sensitive_indicators || canonicalLiveResult?.sensitiveIndicators;
+              if (!sens) return null;
+              const liveBadges = [
+                { key: 'otp_detected', label: 'OTP Solicit', active: sens.otp_detected },
+                { key: 'upi_pin_detected', label: 'UPI PIN Solicit', active: sens.upi_pin_detected },
+                { key: 'pin_detected', label: 'PIN Solicit', active: sens.pin_detected && !sens.upi_pin_detected },
+                { key: 'cvv_detected', label: 'CVV Solicit', active: sens.cvv_detected },
+                { key: 'password_detected', label: 'Password Solicit', active: sens.password_detected },
+                { key: 'payment_transfer_detected', label: 'Payment Transfer', active: sens.payment_transfer_detected },
+                { key: 'impersonation_detected', label: 'Impersonation', active: sens.impersonation_detected },
+                { key: 'urgency_detected', label: 'Urgency Pressure', active: sens.urgency_detected }
+              ].filter(b => b.active);
+
+              if (liveBadges.length === 0) return null;
+
+              return (
+                <div style={{ marginTop: 8, paddingTop: 6, borderTop: '1px solid var(--border-subtle)', display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                  {liveBadges.map((b, idx) => (
+                    <span key={idx} style={{
+                      fontSize: '0.68rem',
+                      fontWeight: 600,
+                      padding: '2px 6px',
+                      borderRadius: 3,
+                      background: 'rgba(239, 68, 68, 0.2)',
+                      border: '1px solid var(--threat-border)',
+                      color: 'var(--threat)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 3
+                    }}>
+                      <ShieldAlert size={10} />
+                      {b.label}
+                    </span>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
 
           {/* Detection Event Feed */}

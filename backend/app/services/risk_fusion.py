@@ -111,15 +111,20 @@ class RiskFusionEngine:
             reasons.insert(0, "CRITICAL COMPOUND THREAT: Synthetic voice clone combined with active social engineering fraud.")
 
         # Override 2: Direct Credential Extraction / Social Engineering Attack
-        if scam_score >= 75.0 or is_critical_flag or any(k in intents for k in ["OTP_REQUEST", "FINANCIAL_CREDENTIAL", "PAYMENT_DEMAND", "REMOTE_ACCESS"]):
+        credential_intents = {"OTP_REQUEST", "CREDENTIAL_REQUEST", "CARD_DETAILS_REQUEST", "UPI_REQUEST", "FINANCIAL_REQUEST", "REMOTE_ACCESS_REQUEST"}
+        if scam_score >= 75.0 or is_critical_flag or any(k in intents for k in credential_intents):
             raw_fusion = max(raw_fusion, 76.0)
             if "OTP_REQUEST" in intents:
                 reasons.append("OTP request detected: dialogue solicits one-time verification credential.")
-            elif "FINANCIAL_CREDENTIAL" in intents:
-                reasons.append("Financial credential request detected: sensitive bank or card details solicited.")
-            elif "PAYMENT_DEMAND" in intents:
+            if "UPI_REQUEST" in intents:
+                reasons.append("UPI PIN / banking PIN request detected.")
+            if "CARD_DETAILS_REQUEST" in intents:
+                reasons.append("Card details / CVV request detected: sensitive security details solicited.")
+            if "CREDENTIAL_REQUEST" in intents:
+                reasons.append("Financial credential request detected: sensitive security credentials solicited.")
+            if "FINANCIAL_REQUEST" in intents:
                 reasons.append("Payment demand detected: coercive money transfer or payment requested.")
-            elif "REMOTE_ACCESS" in intents:
+            if "REMOTE_ACCESS_REQUEST" in intents:
                 reasons.append("Remote access request: solicitation to install remote screen-sharing tools.")
 
         # Override 3: High Deepfake Voice Alone

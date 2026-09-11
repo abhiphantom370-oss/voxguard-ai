@@ -43,6 +43,13 @@ async def lifespan(app: FastAPI):
             logger.info(f"[VoxGuard] Verified: {detector.model_version} initialized (Engine: {detector.engine}, Neural Active: {detector.neural_available}).")
         except Exception as m_err:
             logger.error(f"[VoxGuard] ONNX model initialization error: {m_err}", exc_info=True)
+
+        try:
+            from services.speech_transcriber import transcriber_service
+            if transcriber_service.is_available:
+                logger.info(f"[VoxGuard] Verified: Low-memory transcription ({transcriber_service.model_name}) active.")
+        except Exception as s_err:
+            logger.warning(f"[VoxGuard] Transcription initialization warning: {s_err}")
     else:
         # Full mode: Warm up ML models once into memory
         try:
@@ -129,12 +136,13 @@ async def health_check():
     detector = DeepfakeDetectorService.get_instance()
 
     stt_available = False
-    if not is_cloud_lite():
-        try:
-            from services.speech_transcriber import transcriber_service
-            stt_available = transcriber_service.model is not None
-        except Exception:
-            stt_available = False
+    stt_engine = "none"
+    try:
+        from services.speech_transcriber import transcriber_service
+        stt_available = transcriber_service.is_available
+        stt_engine = transcriber_service.model_name
+    except Exception:
+        stt_available = False
 
     return {
         "status": "healthy",
@@ -142,8 +150,11 @@ async def health_check():
         "version": "3.0.0",
         "engine": detector.engine,
         "neural_available": detector.neural_available,
-        "transcription_available": stt_available,
         "model_loaded": detector.neural_available,
+        "transcription_available": stt_available,
+        "transcription_engine": stt_engine,
+        "speaker_verification_available": True,
+        "cloud_mode": True,
         "cloud_lite": is_cloud_lite(),
         "memory_safe": True,
         "mode": "cloud-lite" if is_cloud_lite() else "full",

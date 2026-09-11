@@ -276,6 +276,12 @@ class ScamIntentDetector:
 
         text = transcript.strip()
         text_lower = text.lower()
+        # ASR acronym, punctuation, and hyphen normalization
+        text_clean = re.sub(r'[-\.]', ' ', text_lower)
+        text_clean = re.sub(r'\s+', ' ', text_clean).strip()
+        text_clean = re.sub(r'\bup\s*i(?:\s*|\b)pin\b', 'upi pin', text_clean)
+        text_clean = re.sub(r'\bo\s*t\s*p\b', 'otp', text_clean)
+        text_clean = re.sub(r'\bc\s*v\s*v\b', 'cvv', text_clean)
 
         detected_intents: List[str] = []
         suspicious_phrases: List[Dict[str, str]] = []
@@ -287,27 +293,29 @@ class ScamIntentDetector:
         raw_matches = []
         for cat_name, cat_meta in CATEGORY_PATTERNS.items():
             for pat in cat_meta["patterns"]:
-                for match in re.finditer(pat, text_lower):
-                    start, end = match.span()
-                    if cls.is_negated_or_educational(text_lower, start, end):
-                        logger.info(f"[ScamDetector] Ignored negated/educational phrase: '{text[start:end]}'")
-                        continue
-                    raw_matches.append({
-                        "start": start,
-                        "end": end,
-                        "phrase": text[start:end],
-                        "category": cat_name,
-                        "weight": cat_meta["weight"]
-                    })
+                # Match against both raw lower text and normalized clean text
+                for t_search, orig_str in [(text_lower, text), (text_clean, text)]:
+                    for match in re.finditer(pat, t_search):
+                        start, end = match.span()
+                        if cls.is_negated_or_educational(t_search, start, end):
+                            logger.info(f"[ScamDetector] Ignored negated/educational phrase: '{t_search[start:end]}'")
+                            continue
+                        matched_snippet = orig_str[start:end] if end <= len(orig_str) else t_search[start:end]
+                        raw_matches.append({
+                            "start": start,
+                            "end": end,
+                            "phrase": matched_snippet,
+                            "category": cat_name,
+                            "weight": cat_meta["weight"]
+                        })
 
         # Sort raw matches by length descending so longer phrases take precedence
         raw_matches.sort(key=lambda m: (m["end"] - m["start"]), reverse=True)
         selected_spans = []
 
         for m in raw_matches:
-            # If this span is a strict substring/subspan of an already selected span of the same category, skip it
             is_subspan = any(
-                (s["start"] <= m["start"] and s["end"] >= m["end"]) for s in selected_spans
+                (s["start"] <= m["start"] and s["end"] >= m["end"] and s["category"] == m["category"]) for s in selected_spans
             )
             if not is_subspan:
                 selected_spans.append(m)
@@ -325,7 +333,7 @@ class ScamIntentDetector:
         synergy_bonus = 0.0
 
         # OTP / Credential + Urgency
-        if ("OTP_REQUEST" in detected_intents or "CREDENTIAL_REQUEST" in detected_intents) and "URGENCY_PRESSURE" in detected_intents:
+        if ("OTP_REQUEST" in detected_intents or "CREDENTIAL_REQUEST" in detected_intents or "UPI_REQUEST" in detected_intents) and "URGENCY_PRESSURE" in detected_intents:
             synergy_bonus += 15.0
             explanations.append("High-severity combination: Urgent demand coupled with credential/OTP extraction.")
 
@@ -333,6 +341,7 @@ class ScamIntentDetector:
         if "BANK_IMPERSONATION" in detected_intents and (
             "OTP_REQUEST" in detected_intents or
             "CREDENTIAL_REQUEST" in detected_intents or
+            "UPI_REQUEST" in detected_intents or
             "ACCOUNT_SUSPENSION_THREAT" in detected_intents
         ):
             synergy_bonus += 20.0
@@ -357,7 +366,7 @@ class ScamIntentDetector:
                 explanations.append("Intimidation tactics detected (Digital Arrest / Law Enforcement threat coercion).")
 
         # Account Suspension + OTP
-        if "ACCOUNT_SUSPENSION_THREAT" in detected_intents and "OTP_REQUEST" in detected_intents and "BANK_IMPERSONATION" not in detected_intents:
+        if "ACCOUNT_SUSPENSION_THREAT" in detected_intents and ("OTP_REQUEST" in detected_intents or "UPI_REQUEST" in detected_intents) and "BANK_IMPERSONATION" not in detected_intents:
             synergy_bonus += 15.0
             explanations.append("Account suspension intimidation used to extract verification credentials.")
 
@@ -385,6 +394,32 @@ class ScamIntentDetector:
             detail = flagged[0] if flagged else "Critical social-engineering cues"
             critical_msg = f"CRITICAL SECURITY ALERT: {detail} in conversational stream!"
 
+        # Extract structured sensitive request indicators
+        otp_detected = ("OTP_REQUEST" in detected_intents) or bool(re.search(r"\b(?:otp|one\s*time\s*password)\b", text_clean))
+        pin_detected = ("UPI_REQUEST" in detected_intents) or bool(re.search(r"\b(?:pin|mpin|atm\s*pin|upi\s*pin)\b", text_clean))
+        cvv_detected = bool(re.search(r"\bcvv\b", text_clean))
+        upi_pin_detected = ("UPI_REQUEST" in detected_intents) or bool(re.search(r"\bupi\s*pin\b", text_clean))
+        password_detected = bool(re.search(r"\bpassword\b", text_clean))
+        payment_transfer_detected = ("FINANCIAL_REQUEST" in detected_intents) or bool(re.search(r"\b(?:transfer|send\s*money|pay|deposit|funds)\b", text_clean))
+        impersonation_detected = bool({"BANK_IMPERSONATION", "LEGAL_THREAT_COERCION"}.intersection(detected_intents))
+        urgency_detected = ("URGENCY_PRESSURE" in detected_intents) or bool(re.search(r"\b(?:immediately|urgently|right\s*now|hurry)\b", text_clean))
+        sensitive_request = bool(
+            otp_detected or pin_detected or cvv_detected or upi_pin_detected or
+            password_detected or payment_transfer_detected or impersonation_detected or has_critical
+        )
+
+        sensitive_indicators = {
+            "otp_detected": otp_detected,
+            "pin_detected": pin_detected,
+            "cvv_detected": cvv_detected,
+            "upi_pin_detected": upi_pin_detected,
+            "password_detected": password_detected,
+            "payment_transfer_detected": payment_transfer_detected,
+            "impersonation_detected": impersonation_detected,
+            "urgency_detected": urgency_detected,
+            "sensitive_request": sensitive_request
+        }
+
         return {
             "scamIntentScore": scam_intent_score,
             "scamCategory": scam_category,
@@ -392,7 +427,10 @@ class ScamIntentDetector:
             "suspiciousPhrases": suspicious_phrases,
             "explanation": explanations,
             "isCriticalWarning": has_critical,
-            "criticalWarningMessage": critical_msg
+            "criticalWarningMessage": critical_msg,
+            "sensitive_indicators": sensitive_indicators,
+            "sensitiveIndicators": sensitive_indicators
         }
+
 
 scam_detector = ScamIntentDetector()

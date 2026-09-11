@@ -546,6 +546,56 @@ export default function AnalyzeVoice() {
                   ))}
                 </div>
               )}
+
+              {/* Sensitive Request Indicators */}
+              {(analysisContract.sensitive_indicators || analysisContract.sensitiveIndicators) && (
+                <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border-subtle)' }}>
+                  <span style={{ fontSize: '0.74rem', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: 6 }}>
+                    Sensitive Request Indicators:
+                  </span>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {(() => {
+                      const sens = analysisContract.sensitive_indicators || analysisContract.sensitiveIndicators;
+                      const badges = [
+                        { key: 'otp_detected', label: 'OTP Solicit', active: sens.otp_detected },
+                        { key: 'upi_pin_detected', label: 'UPI PIN Solicit', active: sens.upi_pin_detected },
+                        { key: 'pin_detected', label: 'PIN Solicit', active: sens.pin_detected && !sens.upi_pin_detected },
+                        { key: 'cvv_detected', label: 'CVV Solicit', active: sens.cvv_detected },
+                        { key: 'password_detected', label: 'Password Request', active: sens.password_detected },
+                        { key: 'payment_transfer_detected', label: 'Payment Transfer', active: sens.payment_transfer_detected },
+                        { key: 'impersonation_detected', label: 'Authority Impersonation', active: sens.impersonation_detected },
+                        { key: 'urgency_detected', label: 'Urgency Pressure', active: sens.urgency_detected }
+                      ].filter(b => b.active);
+
+                      if (badges.length === 0) {
+                        return (
+                          <span style={{ fontSize: '0.7rem', padding: '2px 8px', borderRadius: 4, background: 'rgba(16, 185, 129, 0.08)', border: '1px solid var(--safe-border)', color: 'var(--safe)' }}>
+                            No sensitive credential requests detected
+                          </span>
+                        );
+                      }
+
+                      return badges.map((b, idx) => (
+                        <span key={idx} style={{
+                          fontSize: '0.72rem',
+                          fontWeight: 600,
+                          padding: '3px 8px',
+                          borderRadius: 4,
+                          background: 'rgba(239, 68, 68, 0.15)',
+                          border: '1px solid var(--threat-border)',
+                          color: 'var(--threat)',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4
+                        }}>
+                          <ShieldAlert size={12} />
+                          {b.label}
+                        </span>
+                      ));
+                    })()}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
