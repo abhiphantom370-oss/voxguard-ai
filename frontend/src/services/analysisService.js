@@ -14,27 +14,63 @@ const configuredBase = (rawBaseUrl && rawBaseUrl.trim())
   ? rawBaseUrl.trim().replace(/\/+$/, '')
   : '';
 
+/**
+ * Robust, single-read HTTP fetch wrapper.
+ * Guarantees that the Response body stream is read EXACTLY ONCE.
+ * Eliminates "Failed to execute 'text' on 'Response': body stream already read" errors.
+ */
 async function apiRequest(endpoint, options = {}) {
   const primaryUrl = configuredBase ? `${configuredBase}${endpoint}` : endpoint;
   let response;
   try {
     response = await fetch(primaryUrl, options);
   } catch (primaryErr) {
-    throw new Error(primaryErr.message || `Unable to connect to VoxGuard inference backend${configuredBase ? ` at ${configuredBase}` : ''}.`);
+    throw new Error(
+      primaryErr.message ||
+      `Unable to connect to VoxGuard inference backend${configuredBase ? ` at ${configuredBase}` : ''}. Please verify backend service availability.`
+    );
+  }
+
+  // Handle blob responses if explicitly requested (e.g., CSV export)
+  if (options.asBlob) {
+    if (!response.ok) {
+      const raw = await response.text().catch(() => '');
+      let errData;
+      try {
+        errData = raw ? JSON.parse(raw) : {};
+      } catch {
+        errData = { message: raw };
+      }
+      throw new Error(
+        errData?.detail ||
+        errData?.message ||
+        `Request failed with status ${response.status}`
+      );
+    }
+    return await response.blob();
+  }
+
+  // Safely consume the Response body stream EXACTLY ONCE as text
+  const raw = await response.text().catch(() => '');
+
+  let data;
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch {
+    data = { message: raw };
   }
 
   if (!response.ok) {
-    let errMessage = `HTTP ${response.status}`;
-    try {
-      const errJson = await response.json();
-      errMessage = errJson.detail || errJson.message || JSON.stringify(errJson);
-    } catch {
-      errMessage = await response.text();
-    }
-    throw new Error(errMessage);
+    // If HTML was returned (e.g. 404, 502, 504 from gateway or CDN), provide a clean error
+    const isHtml = typeof raw === 'string' && (raw.includes('<!DOCTYPE') || raw.includes('<html') || raw.includes('<html>'));
+    const message = isHtml
+      ? `Backend endpoint returned HTTP ${response.status} (${response.statusText || 'Error'}). Please verify backend availability.`
+      : (data?.detail || data?.message || (typeof data === 'string' && data) || `Request failed with status ${response.status}`);
+
+    throw new Error(message);
   }
 
-  return response;
+  return data;
 }
 
 /**
@@ -59,12 +95,10 @@ export async function analyzeAudio(file, metadata = {}) {
     formData.append('sensitivity', metadata.sensitivity);
   }
 
-  const response = await apiRequest('/api/analyze', {
+  return await apiRequest('/api/analyze', {
     method: 'POST',
     body: formData
   });
-
-  return await response.json();
 }
 
 /**
@@ -77,13 +111,11 @@ export async function analyzeLiveChunk(chunkBlob, sessionId = 'default-live-sess
   formData.append('session_id', sessionId);
   formData.append('chunk_index', String(chunkIndex));
 
-  const response = await apiRequest('/api/live/chunk', {
+  return await apiRequest('/api/live/chunk', {
     method: 'POST',
     body: formData,
     signal
   });
-
-  return await response.json();
 }
 
 export async function sendLiveChunk(chunkBlob, chunkIndex = 0, sessionId = 'default-live-session', signal = null) {
@@ -99,34 +131,30 @@ export async function fetchHistory(search = '', riskFilter = 'all') {
   if (riskFilter && riskFilter !== 'all') params.set('risk_filter', riskFilter);
 
   const endpoint = `/api/history?${params.toString()}`;
-  const response = await apiRequest(endpoint);
-  return await response.json();
+  return await apiRequest(endpoint);
 }
 
 /**
  * Deletes an analysis record.
  */
 export async function deleteHistoryRecord(id) {
-  const response = await apiRequest(`/api/history/${encodeURIComponent(id)}`, {
+  return await apiRequest(`/api/history/${encodeURIComponent(id)}`, {
     method: 'DELETE'
   });
-  return await response.json();
 }
 
 /**
  * Fetches real aggregate reporting metrics from the SQLite database.
  */
 export async function fetchReportsMetrics() {
-  const response = await apiRequest('/api/reports/metrics');
-  return await response.json();
+  return await apiRequest('/api/reports/metrics');
 }
 
 /**
  * Downloads the real audit log report as CSV.
  */
 export async function exportReportsCsv() {
-  const response = await apiRequest('/api/reports/export');
-  const blob = await response.blob();
+  const blob = await apiRequest('/api/reports/export', { asBlob: true });
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -141,8 +169,7 @@ export async function exportReportsCsv() {
  * Lists enrolled trusted biometric speakers.
  */
 export async function fetchSpeakers() {
-  const response = await apiRequest('/api/speaker/list');
-  return await response.json();
+  return await apiRequest('/api/speaker/list');
 }
 
 /**
@@ -155,21 +182,19 @@ export async function enrollSpeaker(name, role, department, audioFile) {
   if (department) formData.append('department', department);
   formData.append('file', audioFile, audioFile.name || 'reference_speech.wav');
 
-  const response = await apiRequest('/api/speaker/enroll', {
+  return await apiRequest('/api/speaker/enroll', {
     method: 'POST',
     body: formData
   });
-  return await response.json();
 }
 
 /**
  * Removes an enrolled speaker from the vault.
  */
 export async function deleteSpeaker(speakerId) {
-  const response = await apiRequest(`/api/speaker/${encodeURIComponent(speakerId)}`, {
+  return await apiRequest(`/api/speaker/${encodeURIComponent(speakerId)}`, {
     method: 'DELETE'
   });
-  return await response.json();
 }
 
 /**
@@ -180,29 +205,26 @@ export async function verifySpeaker(speakerId, audioFile) {
   formData.append('speaker_id', speakerId);
   formData.append('file', audioFile, audioFile.name || 'verification_sample.wav');
 
-  const response = await apiRequest('/api/speaker/verify', {
+  return await apiRequest('/api/speaker/verify', {
     method: 'POST',
     body: formData
   });
-  return await response.json();
 }
 
 /**
  * Fetches settings.
  */
 export async function fetchSettings() {
-  const response = await apiRequest('/api/settings');
-  return await response.json();
+  return await apiRequest('/api/settings');
 }
 
 /**
  * Saves settings.
  */
 export async function saveSettings(settings) {
-  const response = await apiRequest('/api/settings', {
+  return await apiRequest('/api/settings', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(settings)
   });
-  return await response.json();
 }
