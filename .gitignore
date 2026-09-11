@@ -1,0 +1,32 @@
+# Python
+**/__pycache__/
+*.py[cod]
+*$py.class
+backend/venv/
+venv/
+ENV/
+env/
+
+# Node
+node_modules/
+**/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build outputs
+dist/
+**/dist/
+
+# OS / Editor
+.DS_Store
+**/.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local development certificates
+frontend/certs/
+*.pem

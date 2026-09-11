@@ -1,0 +1,83 @@
+:root {
+  /* Color Palette - Deep Dark Cyber Theme */
+  --bg-primary: #070a12;
+  --bg-secondary: #0b1120;
+  --bg-tertiary: #10192e;
+  --bg-card: rgba(16, 25, 46, 0.72);
+  --bg-card-hover: rgba(22, 34, 62, 0.85);
+  --bg-glass: rgba(13, 20, 37, 0.65);
+  --bg-input: rgba(8, 14, 26, 0.7);
+
+  /* Cyber & Security Accents */
+  --cyan-500: #00f0ff;
+  --cyan-400: #38e1ff;
+  --cyan-600: #00bcd4;
+  --cyan-glow: rgba(0, 240, 255, 0.25);
+  --cyan-glow-subtle: rgba(0, 240, 255, 0.08);
+
+  --blue-500: #3b82f6;
+  --blue-600: #2563eb;
+  --blue-glow: rgba(59, 130, 246, 0.25);
+
+  /* Security Status Colors */
+  --safe: #10b981;
+  --safe-bg: rgba(16, 185, 129, 0.12);
+  --safe-border: rgba(16, 185, 129, 0.35);
+  --safe-glow: rgba(16, 185, 129, 0.25);
+
+  --suspicious: #f59e0b;
+  --suspicious-bg: rgba(245, 158, 11, 0.12);
+  --suspicious-border: rgba(245, 158, 11, 0.35);
+  --suspicious-glow: rgba(245, 158, 11, 0.25);
+
+  --warning: #f59e0b;
+  --warning-bg: rgba(245, 158, 11, 0.12);
+  --warning-border: rgba(245, 158, 11, 0.35);
+  --warning-glow: rgba(245, 158, 11, 0.25);
+
+  --threat: #ef4444;
+  --threat-bg: rgba(239, 68, 68, 0.12);
+  --threat-border: rgba(239, 68, 68, 0.35);
+  --threat-glow: rgba(239, 68, 68, 0.3);
+
+  --neutral: #64748b;
+  --neutral-bg: rgba(100, 116, 139, 0.12);
+  --neutral-border: rgba(100, 116, 139, 0.3);
+
+  /* Typography Colors */
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --text-accent: #00f0ff;
+
+  /* Borders & Dividers */
+  --border-subtle: rgba(148, 163, 184, 0.1);
+  --border-accent: rgba(0, 240, 255, 0.22);
+  --border-accent-strong: rgba(0, 240, 255, 0.5);
+
+  /* Gradients */
+  --grad-primary: linear-gradient(135deg, #00f0ff 0%, #3b82f6 100%);
+  --grad-card: linear-gradient(145deg, rgba(16, 25, 46, 0.85) 0%, rgba(10, 16, 31, 0.7) 100%);
+  --grad-cyber-header: linear-gradient(90deg, rgba(0, 240, 255, 0.15) 0%, transparent 80%);
+
+  /* Shadows */
+  --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 4px 18px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.6);
+  --shadow-glow-cyan: 0 0 20px rgba(0, 240, 255, 0.25);
+  --shadow-glow-blue: 0 0 20px rgba(59, 130, 246, 0.25);
+
+  /* Typography */
+  --font-main: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  /* Layout Constants */
+  --sidebar-width: 260px;
+  --header-height: 68px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
