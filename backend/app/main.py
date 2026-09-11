@@ -86,6 +86,7 @@ has_wildcard = "*" in configured_origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=configured_origins,
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=not has_wildcard,
     allow_methods=["*"],
     allow_headers=["*"],
