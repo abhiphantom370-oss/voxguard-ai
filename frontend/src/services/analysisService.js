@@ -6,13 +6,7 @@
 
 import { validateAudioFile } from './audioService';
 import { getExtensionFromMime } from '../utils/audioUtils';
-
-// Base URL configuration: in production, reads VITE_API_BASE_URL.
-// In local development, falls back to relative paths routed through Vite dev proxy.
-const rawBaseUrl = import.meta.env.VITE_API_BASE_URL;
-const configuredBase = (rawBaseUrl && rawBaseUrl.trim())
-  ? rawBaseUrl.trim().replace(/\/+$/, '')
-  : '';
+import { API_BASE_URL, getEndpoint } from './apiConfig';
 
 /**
  * Robust, single-read HTTP fetch wrapper.
@@ -20,14 +14,14 @@ const configuredBase = (rawBaseUrl && rawBaseUrl.trim())
  * Eliminates "Failed to execute 'text' on 'Response': body stream already read" errors.
  */
 async function apiRequest(endpoint, options = {}) {
-  const primaryUrl = configuredBase ? `${configuredBase}${endpoint}` : endpoint;
+  const primaryUrl = getEndpoint(endpoint);
   let response;
   try {
     response = await fetch(primaryUrl, options);
   } catch (primaryErr) {
     throw new Error(
       primaryErr.message ||
-      `Unable to connect to VoxGuard inference backend${configuredBase ? ` at ${configuredBase}` : ''}. Please verify backend service availability.`
+      `Unable to connect to VoxGuard inference backend${API_BASE_URL ? ` at ${API_BASE_URL}` : ''}. Please verify backend service availability.`
     );
   }
 
@@ -227,4 +221,11 @@ export async function saveSettings(settings) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(settings)
   });
+}
+
+/**
+ * Checks backend health, runtime mode (cloud-lite vs full), and neural availability.
+ */
+export async function checkBackendHealth() {
+  return await apiRequest('/health');
 }

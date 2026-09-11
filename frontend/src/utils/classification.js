@@ -83,7 +83,25 @@ export function normalizeProbability(prob) {
  * @param {number|string|null|undefined} rawProb - The probability in 0–1 or 0–100 format
  * @returns {Object} Unified classification result
  */
-export function classifyDeepfakeProbability(rawProb) {
+export function classifyDeepfakeProbability(rawProb, isCloudLite = false) {
+  if (isCloudLite) {
+    return {
+      label: 'Cloud Lite DSP Analysis',
+      uppercaseLabel: 'CLOUD LITE DSP ANALYSIS',
+      severity: 'safe',
+      level: 'safe',
+      score: 0,
+      percentage: '0.0',
+      formattedPercent: 'N/A (Cloud Lite)',
+      color: 'var(--cyan-400)',
+      bgColor: 'rgba(6, 182, 212, 0.1)',
+      borderColor: 'rgba(6, 182, 212, 0.4)',
+      glowColor: 'rgba(6, 182, 212, 0.25)',
+      badgeClass: 'risk-badge safe',
+      summary: 'Cloud Lite DSP Analysis: Acoustic signal feature extraction verified. Neural models bypassed.'
+    };
+  }
+
   const norm = normalizeProbability(rawProb);
   const percentage = (norm * 100.0).toFixed(1);
 
@@ -363,9 +381,15 @@ export function createCanonicalLiveResult(data) {
     return null;
   }
 
+  const isCloudLite = Boolean(
+    data.neural_available === false ||
+    data.modelName === 'cloud-lite-dsp' ||
+    data.engine === 'cloud-lite-dsp'
+  );
+
   // 1. Unified classification from deepfake probability
   const rawProb = data.deepfakeProbability !== undefined ? data.deepfakeProbability : 0;
-  const classification = classifyDeepfakeProbability(rawProb);
+  const classification = classifyDeepfakeProbability(rawProb, isCloudLite);
 
   // 2. Derive unified risk using the centralized trust engine
   const targetScore = typeof data.rollingThreatScore === 'number'

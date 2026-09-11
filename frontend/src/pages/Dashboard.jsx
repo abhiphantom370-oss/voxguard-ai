@@ -17,34 +17,43 @@ import {
 import StatCard from '../components/common/StatCard';
 import RiskBadge from '../components/common/RiskBadge';
 import Banner from '../components/common/Banner';
-import { fetchReportsMetrics, fetchHistory } from '../services/analysisService';
+import { fetchReportsMetrics, fetchHistory, checkBackendHealth } from '../services/analysisService';
 import { classifyDeepfakeProbability } from '../utils/classification';
 
 export default function Dashboard() {
   const [metrics, setMetrics] = useState(null);
   const [recentAnalyses, setRecentAnalyses] = useState([]);
+  const [backendHealth, setBackendHealth] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.allSettled([fetchReportsMetrics(), fetchHistory('', 'all')])
-      .then(([metricsRes, historyRes]) => {
+    Promise.allSettled([fetchReportsMetrics(), fetchHistory('', 'all'), checkBackendHealth()])
+      .then(([metricsRes, historyRes, healthRes]) => {
         if (metricsRes.status === 'fulfilled') {
           setMetrics(metricsRes.value);
         }
         if (historyRes.status === 'fulfilled' && Array.isArray(historyRes.value)) {
           setRecentAnalyses(historyRes.value.slice(0, 5));
         }
+        if (healthRes.status === 'fulfilled') {
+          setBackendHealth(healthRes.value);
+        }
       })
       .catch((err) => console.warn('[VoxGuard] Dashboard telemetry load error:', err))
       .finally(() => setLoading(false));
   }, []);
 
+  const isCloudLite = backendHealth?.mode === 'cloud-lite' || backendHealth?.neural_available === false;
+
   return (
     <div>
       {/* System Status Banner */}
       <Banner
-        message="VoxGuard Neural Audio Defense Engine v3.0 Online • PyTorch AcousticNet & Faster-Whisper Real-Time Pipeline Active."
-        badge="SECURITY SHIELD ONLINE"
+        message={isCloudLite
+          ? "VoxGuard Cloud Lite DSP Engine Online • Lightweight Acoustic Forensics Active (Render Free Cloud-Lite)."
+          : "VoxGuard Neural Audio Defense Engine v3.0 Online • PyTorch AcousticNet & Faster-Whisper Real-Time Pipeline Active."
+        }
+        badge={isCloudLite ? "CLOUD LITE DSP ONLINE" : "SECURITY SHIELD ONLINE"}
       />
 
       {/* Page Header */}
@@ -348,13 +357,17 @@ export default function Dashboard() {
                 <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Server size={14} /> Backend Inference
                 </span>
-                <span style={{ color: 'var(--safe)' }}>FastAPI Online (:8000)</span>
+                <span style={{ color: 'var(--safe)' }}>
+                  {isCloudLite ? 'Cloud Lite DSP (Online)' : 'FastAPI Full ML (Online)'}
+                </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid var(--border-subtle)' }}>
                 <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Cpu size={14} /> Speech Transcription
                 </span>
-                <span style={{ color: 'var(--cyan-400)' }}>Faster-Whisper Tiny (CPU)</span>
+                <span style={{ color: isCloudLite ? 'var(--text-muted)' : 'var(--cyan-400)' }}>
+                  {isCloudLite ? 'Bypassed (Cloud Lite)' : 'Faster-Whisper Tiny (CPU)'}
+                </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0' }}>
                 <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6 }}>

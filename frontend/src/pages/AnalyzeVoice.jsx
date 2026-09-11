@@ -94,8 +94,15 @@ export default function AnalyzeVoice() {
   };
 
   const isButtonDisabled = isRecordingActive || isAnalyzing;
+  const isCloudLite = Boolean(
+    analysisContract && (
+      analysisContract.neural_available === false ||
+      analysisContract.modelName === 'cloud-lite-dsp' ||
+      analysisContract.engine === 'cloud-lite-dsp'
+    )
+  );
   const deepfakeClassification = analysisContract
-    ? classifyDeepfakeProbability(analysisContract.deepfakeProbability)
+    ? classifyDeepfakeProbability(analysisContract.deepfakeProbability, isCloudLite)
     : null;
 
   const unifiedRisk = analysisContract
@@ -298,13 +305,25 @@ export default function AnalyzeVoice() {
                   <span className="mono-text" style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
                     Session ID: {analysisContract.analysisId}
                   </span>
-                  <span className="demo-pill" style={{
-                    borderColor: unifiedRisk.borderColor,
-                    color: unifiedRisk.color,
-                    background: unifiedRisk.bgColor
-                  }}>
-                    {unifiedRisk.label}
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {isCloudLite && (
+                      <span className="demo-pill" style={{
+                        borderColor: 'var(--cyan-400)',
+                        color: 'var(--cyan-400)',
+                        background: 'rgba(6, 182, 212, 0.12)',
+                        fontWeight: 600
+                      }}>
+                        Cloud Lite DSP Analysis
+                      </span>
+                    )}
+                    <span className="demo-pill" style={{
+                      borderColor: unifiedRisk.borderColor,
+                      color: unifiedRisk.color,
+                      background: unifiedRisk.bgColor
+                    }}>
+                      {unifiedRisk.label}
+                    </span>
+                  </div>
                 </div>
 
                 <div style={{
@@ -322,7 +341,7 @@ export default function AnalyzeVoice() {
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <Server size={13} />
-                    <span>Model: {analysisContract.modelName || 'VoxGuard-AcousticNet-v3.0'}</span>
+                    <span>Analysis Engine: {isCloudLite ? 'Cloud Lite DSP Analysis (Neural Model Offline)' : (analysisContract.modelName || 'VoxGuard-AcousticNet-v3.0')}</span>
                   </div>
                   {analysisContract.processingTime != null && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -349,19 +368,24 @@ export default function AnalyzeVoice() {
 
           {/* Results Grid - Real Backend Metrics */}
           <div className="results-grid">
-            {/* Deepfake Probability */}
+            {/* Deepfake Probability / Acoustic Evaluation */}
             <div className="result-metric-card">
-              <span className="result-metric-label">Deepfake Probability</span>
+              <span className="result-metric-label">
+                {isCloudLite ? 'Acoustic Signal Purity' : 'Deepfake Probability'}
+              </span>
               <div className="result-metric-value mono-text" style={{
-                color: deepfakeClassification ? deepfakeClassification.color : 'var(--neutral)'
+                color: isCloudLite ? 'var(--cyan-400)' : (deepfakeClassification ? deepfakeClassification.color : 'var(--neutral)'),
+                fontSize: isCloudLite ? '1.15rem' : undefined
               }}>
-                {analysisContract && analysisContract.deepfakeProbability != null ? `${analysisContract.deepfakeProbability}%` : '--%'}
+                {isCloudLite
+                  ? 'DSP Verified'
+                  : (analysisContract && analysisContract.deepfakeProbability != null ? `${analysisContract.deepfakeProbability}%` : '--%')}
               </div>
               <span className="waiting-badge">
                 <span className="risk-dot" style={{
-                  backgroundColor: deepfakeClassification ? deepfakeClassification.color : 'var(--neutral)'
+                  backgroundColor: isCloudLite ? 'var(--cyan-400)' : (deepfakeClassification ? deepfakeClassification.color : 'var(--neutral)')
                 }} />
-                {deepfakeClassification ? deepfakeClassification.label : 'Awaiting Model Inference'}
+                {isCloudLite ? 'Cloud Lite DSP Analysis' : (deepfakeClassification ? deepfakeClassification.label : 'Awaiting Model Inference')}
               </span>
             </div>
 
@@ -370,16 +394,16 @@ export default function AnalyzeVoice() {
               <span className="result-metric-label">Authenticity</span>
               <div className="result-metric-value" style={{
                 fontSize: '1.05rem',
-                color: deepfakeClassification ? deepfakeClassification.color : 'var(--text-secondary)'
+                color: isCloudLite ? 'var(--cyan-400)' : (deepfakeClassification ? deepfakeClassification.color : 'var(--text-secondary)')
               }}>
-                {deepfakeClassification ? deepfakeClassification.label : 'Pending'}
+                {isCloudLite ? 'Cloud Lite DSP Analysis' : (deepfakeClassification ? deepfakeClassification.label : 'Pending')}
               </div>
               <span className="waiting-badge">
                 <span className="risk-dot" style={{
-                  backgroundColor: deepfakeClassification ? deepfakeClassification.color : 'var(--neutral)'
+                  backgroundColor: isCloudLite ? 'var(--cyan-400)' : (deepfakeClassification ? deepfakeClassification.color : 'var(--neutral)')
                 }} />
                 {analysisContract
-                  ? `${analysisContract.authenticityProbability != null ? analysisContract.authenticityProbability : (100 - Number(deepfakeClassification.percentage)).toFixed(1)}% Authentic`
+                  ? (isCloudLite ? 'Acoustic Signal Evaluated' : `${analysisContract.authenticityProbability != null ? analysisContract.authenticityProbability : (100 - Number(deepfakeClassification.percentage)).toFixed(1)}% Authentic`)
                   : 'Vocoder Analysis Pending'}
               </span>
             </div>
@@ -702,11 +726,11 @@ export default function AnalyzeVoice() {
                   </div>
                   <div>
                     <span style={{ color: 'var(--text-muted)' }}>Deepfake AI:</span>{' '}
-                    <strong className="mono-text">{analysisContract.timing.deepfake_ms || 0}ms</strong>
+                    <strong className="mono-text">{isCloudLite ? 'Bypassed (Cloud Lite)' : `${analysisContract.timing.deepfake_ms || 0}ms`}</strong>
                   </div>
                   <div>
                     <span style={{ color: 'var(--text-muted)' }}>Whisper STT:</span>{' '}
-                    <strong className="mono-text">{analysisContract.timing.stt_ms || 0}ms</strong>
+                    <strong className="mono-text">{isCloudLite ? 'Bypassed (Cloud Lite)' : `${analysisContract.timing.stt_ms || 0}ms`}</strong>
                   </div>
                   <div>
                     <span style={{ color: 'var(--text-muted)' }}>Scam NLP:</span>{' '}
