@@ -13,9 +13,13 @@ export default function MainLayout() {
   const { isNewUser, hasSeenOnboarding, isAuthenticated } = useAuth();
 
   // Show onboarding modal for newly registered user or first login if not yet seen
-  const [showOnboarding, setShowOnboarding] = useState(
-    () => isAuthenticated && (isNewUser || !hasSeenOnboarding())
-  );
+  const [showOnboarding, setShowOnboarding] = useState(() => {
+    try {
+      return Boolean(isAuthenticated && (isNewUser || (typeof hasSeenOnboarding === 'function' && !hasSeenOnboarding())));
+    } catch {
+      return false;
+    }
+  });
 
   return (
     <div className="app-layout">

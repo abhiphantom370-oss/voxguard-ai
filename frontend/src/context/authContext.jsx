@@ -1,14 +1,99 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { safeLocalStorage, safeSessionStorage } from '../utils/safeStorage';
 
 // Create Authentication Context
 const AuthContext = createContext(null);
 
-// SHA-256 helper using standard Web Crypto API (supported across all modern mobile & desktop browsers)
+// Pure JS SHA-256 fallback for environments where window.crypto.subtle is restricted (e.g. non-localhost HTTP / iOS Safari)
+function sha256Sync(ascii) {
+  function rightRotate(value, amount) {
+    return (value >>> amount) | (value << (32 - amount));
+  }
+  const mathPow = Math.pow;
+  const maxWord = mathPow(2, 32);
+  let lengthProperty = 'length';
+  let i, j;
+  let result = '';
+  const words = [];
+  const asciiBitLength = ascii[lengthProperty] * 8;
+  let hash = [];
+  const k = [];
+  let primeCounter = 0;
+  const isComposite = {};
+  for (let candidate = 2; primeCounter < 64; candidate++) {
+    if (!isComposite[candidate]) {
+      for (i = 0; i < 313; i += candidate) {
+        isComposite[i] = candidate;
+      }
+      hash[primeCounter] = (mathPow(candidate, 0.5) * maxWord) | 0;
+      k[primeCounter++] = (mathPow(candidate, 1 / 3) * maxWord) | 0;
+    }
+  }
+  hash = hash.slice(0, 8);
+  ascii += '\x80';
+  while ((ascii[lengthProperty] % 64) - 56) ascii += '\x00';
+  for (i = 0; i < ascii[lengthProperty]; i++) {
+    j = ascii.charCodeAt(i);
+    if (j >> 8) return '';
+    words[i >> 2] |= j << (((3 - i) % 4) * 8);
+  }
+  words[words[lengthProperty]] = (asciiBitLength / maxWord) | 0;
+  words[words[lengthProperty]] = asciiBitLength;
+  for (j = 0; j < words[lengthProperty]; ) {
+    const w = words.slice(j, (j += 16));
+    const oldHash = hash;
+    hash = hash.slice(0, 8);
+    for (i = 0; i < 64; i++) {
+      const i2 = i + j;
+      const w15 = w[i - 15],
+        w2 = w[i - 2];
+      const a = hash[0],
+        e = hash[4];
+      const temp1 =
+        hash[7] +
+        (rightRotate(e, 6) ^ rightRotate(e, 11) ^ rightRotate(e, 25)) +
+        ((e & hash[5]) ^ (~e & hash[6])) +
+        k[i] +
+        (w[i] =
+          i < 16
+            ? w[i]
+            : (w[i - 16] +
+                (rightRotate(w15, 7) ^ rightRotate(w15, 18) ^ (w15 >>> 3)) +
+                w[i - 7] +
+                (rightRotate(w2, 17) ^ rightRotate(w2, 19) ^ (w2 >>> 10))) |
+              0);
+      const temp2 =
+        (rightRotate(a, 2) ^ rightRotate(a, 13) ^ rightRotate(a, 22)) +
+        ((a & hash[1]) ^ (a & hash[2]) ^ (hash[1] & hash[2]));
+      hash = [(temp1 + temp2) | 0].concat(hash);
+      hash[4] = (hash[4] + temp1) | 0;
+    }
+    for (i = 0; i < 8; i++) {
+      hash[i] = (hash[i] + oldHash[i]) | 0;
+    }
+  }
+  for (i = 0; i < 8; i++) {
+    for (j = 3; j >= 0; j--) {
+      const b = (hash[i] >> (8 * j)) & 255;
+      result += (b < 16 ? '0' : '') + b.toString(16);
+    }
+  }
+  return result;
+}
+
+// SHA-256 helper using standard Web Crypto API with seamless pure-JS fallback
 async function hashPassword(password) {
-  const msgUint8 = new TextEncoder().encode(password);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+  try {
+    if (typeof window !== 'undefined' && window.crypto && window.crypto.subtle && window.crypto.subtle.digest) {
+      const msgUint8 = new TextEncoder().encode(password);
+      const hashBuffer = await window.crypto.subtle.digest('SHA-256', msgUint8);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+    }
+  } catch (cryptoErr) {
+    console.warn('[VoxGuard Auth] Web Crypto subtle unavailable, using fallback:', cryptoErr);
+  }
+  return sha256Sync(password);
 }
 
 // Default pre-seeded SIH Judge / Demo account
@@ -25,8 +110,15 @@ export function AuthProvider({ children }) {
     async function initAuth() {
       try {
         // Ensure default demo account exists in local database
-        const usersDbStr = localStorage.getItem('voxguard_users_db');
-        let usersDb = usersDbStr ? JSON.parse(usersDbStr) : {};
+        const usersDbStr = safeLocalStorage.getItem('voxguard_users_db');
+        let usersDb = {};
+        if (usersDbStr) {
+          try {
+            usersDb = JSON.parse(usersDbStr);
+          } catch {
+            usersDb = {};
+          }
+        }
 
         if (!usersDb[DEFAULT_DEMO_EMAIL.toLowerCase()]) {
           const demoHash = await hashPassword(DEFAULT_DEMO_PASS);
@@ -39,16 +131,18 @@ export function AuthProvider({ children }) {
             avatarInitials: 'SA',
             createdAt: new Date().toISOString()
           };
-          localStorage.setItem('voxguard_users_db', JSON.stringify(usersDb));
+          safeLocalStorage.setItem('voxguard_users_db', JSON.stringify(usersDb));
         }
 
         // Check for active session in localStorage (remember me) or sessionStorage
-        const savedUserStr = localStorage.getItem('voxguard_auth_user') || sessionStorage.getItem('voxguard_auth_user');
-        const token = localStorage.getItem('voxguard_auth_token') || sessionStorage.getItem('voxguard_auth_token');
+        const savedUserStr = safeLocalStorage.getItem('voxguard_auth_user') || safeSessionStorage.getItem('voxguard_auth_user');
+        const token = safeLocalStorage.getItem('voxguard_auth_token') || safeSessionStorage.getItem('voxguard_auth_token');
 
         if (savedUserStr && token) {
-          const parsedUser = JSON.parse(savedUserStr);
-          setUser(parsedUser);
+          try {
+            const parsedUser = JSON.parse(savedUserStr);
+            setUser(parsedUser);
+          } catch {}
         }
       } catch (err) {
         console.error('Error initializing VoxGuard Auth:', err);
@@ -76,17 +170,17 @@ export function AuthProvider({ children }) {
 
       const dummyToken = `vg_token_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
-      const storage = rememberMe ? localStorage : sessionStorage;
+      const storage = rememberMe ? safeLocalStorage : safeSessionStorage;
       storage.setItem('voxguard_auth_user', JSON.stringify(sessionUser));
       storage.setItem('voxguard_auth_token', dummyToken);
 
       // Clear the other storage just in case
       if (rememberMe) {
-        sessionStorage.removeItem('voxguard_auth_user');
-        sessionStorage.removeItem('voxguard_auth_token');
+        safeSessionStorage.removeItem('voxguard_auth_user');
+        safeSessionStorage.removeItem('voxguard_auth_token');
       } else {
-        localStorage.removeItem('voxguard_auth_user');
-        localStorage.removeItem('voxguard_auth_token');
+        safeLocalStorage.removeItem('voxguard_auth_user');
+        safeLocalStorage.removeItem('voxguard_auth_token');
       }
 
       setUser(sessionUser);
@@ -94,7 +188,12 @@ export function AuthProvider({ children }) {
     }
 
     // Existing normal login logic
-    const usersDb = JSON.parse(localStorage.getItem('voxguard_users_db') || '{}');
+    let usersDb = {};
+    try {
+      usersDb = JSON.parse(safeLocalStorage.getItem('voxguard_users_db') || '{}');
+    } catch {
+      usersDb = {};
+    }
     const existing = usersDb[cleanEmail];
 
     if (!existing) {
@@ -117,17 +216,17 @@ export function AuthProvider({ children }) {
 
     const dummyToken = `vg_token_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
-    const storage = rememberMe ? localStorage : sessionStorage;
+    const storage = rememberMe ? safeLocalStorage : safeSessionStorage;
     storage.setItem('voxguard_auth_user', JSON.stringify(sessionUser));
     storage.setItem('voxguard_auth_token', dummyToken);
 
     // Clear the other storage just in case
     if (rememberMe) {
-      sessionStorage.removeItem('voxguard_auth_user');
-      sessionStorage.removeItem('voxguard_auth_token');
+      safeSessionStorage.removeItem('voxguard_auth_user');
+      safeSessionStorage.removeItem('voxguard_auth_token');
     } else {
-      localStorage.removeItem('voxguard_auth_user');
-      localStorage.removeItem('voxguard_auth_token');
+      safeLocalStorage.removeItem('voxguard_auth_user');
+      safeLocalStorage.removeItem('voxguard_auth_token');
     }
 
     setUser(sessionUser);
@@ -143,7 +242,12 @@ export function AuthProvider({ children }) {
     if (!cleanEmail || !cleanEmail.includes('@')) throw new Error('Please provide a valid email address.');
     if (password.length < 8) throw new Error('Password must be at least 8 characters long.');
 
-    const usersDb = JSON.parse(localStorage.getItem('voxguard_users_db') || '{}');
+    let usersDb = {};
+    try {
+      usersDb = JSON.parse(safeLocalStorage.getItem('voxguard_users_db') || '{}');
+    } catch {
+      usersDb = {};
+    }
     if (usersDb[cleanEmail]) {
       throw new Error('An account is already registered with this email.');
     }
@@ -162,12 +266,12 @@ export function AuthProvider({ children }) {
     };
 
     usersDb[cleanEmail] = newUser;
-    localStorage.setItem('voxguard_users_db', JSON.stringify(usersDb));
+    safeLocalStorage.setItem('voxguard_users_db', JSON.stringify(usersDb));
 
     // Auto-login new user
     const dummyToken = `vg_token_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-    localStorage.setItem('voxguard_auth_user', JSON.stringify(newUser));
-    localStorage.setItem('voxguard_auth_token', dummyToken);
+    safeLocalStorage.setItem('voxguard_auth_user', JSON.stringify(newUser));
+    safeLocalStorage.setItem('voxguard_auth_token', dummyToken);
 
     setUser(newUser);
     setIsNewUser(true);
@@ -177,7 +281,12 @@ export function AuthProvider({ children }) {
   // Reset Password (simulated recovery)
   const resetPassword = async (email) => {
     const cleanEmail = email.trim().toLowerCase();
-    const usersDb = JSON.parse(localStorage.getItem('voxguard_users_db') || '{}');
+    let usersDb = {};
+    try {
+      usersDb = JSON.parse(safeLocalStorage.getItem('voxguard_users_db') || '{}');
+    } catch {
+      usersDb = {};
+    }
     if (!usersDb[cleanEmail]) {
       throw new Error('No registered account found with that email address.');
     }
@@ -187,10 +296,10 @@ export function AuthProvider({ children }) {
 
   // Logout method
   const logout = () => {
-    localStorage.removeItem('voxguard_auth_user');
-    localStorage.removeItem('voxguard_auth_token');
-    sessionStorage.removeItem('voxguard_auth_user');
-    sessionStorage.removeItem('voxguard_auth_token');
+    safeLocalStorage.removeItem('voxguard_auth_user');
+    safeLocalStorage.removeItem('voxguard_auth_token');
+    safeSessionStorage.removeItem('voxguard_auth_user');
+    safeSessionStorage.removeItem('voxguard_auth_token');
     setUser(null);
     setIsNewUser(false);
   };
@@ -198,13 +307,13 @@ export function AuthProvider({ children }) {
   const markOnboardingComplete = () => {
     setIsNewUser(false);
     if (user?.email) {
-      localStorage.setItem(`voxguard_onboarded_${user.email}`, 'true');
+      safeLocalStorage.setItem(`voxguard_onboarded_${user.email}`, 'true');
     }
   };
 
   const hasSeenOnboarding = () => {
     if (!user?.email) return false;
-    return localStorage.getItem(`voxguard_onboarded_${user.email}`) === 'true';
+    return safeLocalStorage.getItem(`voxguard_onboarded_${user.email}`) === 'true';
   };
 
   return (

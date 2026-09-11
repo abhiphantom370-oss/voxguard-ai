@@ -15,11 +15,13 @@ export default function LiveWaveform({ isActive = false, analyserNode = null, is
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas || typeof canvas.getContext !== 'function') return;
     const ctx = canvas.getContext('2d');
+    if (!ctx) return;
     let animationFrameId;
 
     const render = () => {
+      if (!ctx) return;
       const width = canvas.width;
       const height = canvas.height;
       const centerY = height / 2;

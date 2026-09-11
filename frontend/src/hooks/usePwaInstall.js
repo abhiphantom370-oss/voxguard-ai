@@ -28,16 +28,24 @@ export function usePwaInstall() {
   useEffect(() => {
     // Check if running in standalone mode (installed PWA)
     const checkStandalone = () => {
-      const isDisplayStandalone = window.matchMedia('(display-mode: standalone)').matches;
-      const isIosStandalone = window.navigator.standalone === true;
-      setIsStandalone(Boolean(isDisplayStandalone || isIosStandalone));
+      try {
+        const isDisplayStandalone = Boolean(typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(display-mode: standalone)')?.matches);
+        const isIosStandalone = Boolean(typeof window !== 'undefined' && window.navigator && window.navigator.standalone === true);
+        setIsStandalone(Boolean(isDisplayStandalone || isIosStandalone));
+      } catch {
+        setIsStandalone(false);
+      }
     };
 
     // Check if device is iOS (iPhone/iPad)
     const checkIos = () => {
-      const ua = window.navigator.userAgent.toLowerCase();
-      const isApple = /iphone|ipad|ipod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-      setIsIos(isApple);
+      try {
+        const ua = (typeof window !== 'undefined' && window.navigator?.userAgent?.toLowerCase()) || '';
+        const isApple = /iphone|ipad|ipod/.test(ua) || (Boolean(window.navigator?.platform === 'MacIntel') && (window.navigator?.maxTouchPoints || 0) > 1);
+        setIsIos(Boolean(isApple));
+      } catch {
+        setIsIos(false);
+      }
     };
 
     checkStandalone();

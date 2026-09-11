@@ -10,11 +10,12 @@ import {
 import { fetchSettings, saveSettings } from '../services/analysisService';
 import { usePwaInstall } from '../hooks/usePwaInstall';
 import PwaInstallModal from '../components/common/PwaInstallModal';
+import { safeLocalStorage } from '../utils/safeStorage';
 
 export default function Settings() {
   const { isStandalone, isIos, triggerInstall, showIosGuide, closeIosGuide } = usePwaInstall();
   const [sensitivityPreset, setSensitivityPreset] = useState(() => {
-    return localStorage.getItem('voxguard_sensitivity') || 'balanced';
+    return safeLocalStorage.getItem('voxguard_sensitivity') || 'balanced';
   });
   const [sensitivityValue, setSensitivityValue] = useState(75);
   const [browserAlerts, setBrowserAlerts] = useState(true);
@@ -29,7 +30,7 @@ export default function Settings() {
       .then((data) => {
         if (data.sensitivityPreset) {
           setSensitivityPreset(data.sensitivityPreset);
-          localStorage.setItem('voxguard_sensitivity', data.sensitivityPreset);
+          safeLocalStorage.setItem('voxguard_sensitivity', data.sensitivityPreset);
         }
         if (data.sensitivityValue) setSensitivityValue(data.sensitivityValue);
         if (data.browserAlerts !== undefined) setBrowserAlerts(data.browserAlerts);
@@ -50,7 +51,7 @@ export default function Settings() {
 
   const handleSaveSettings = async (e) => {
     if (e) e.preventDefault();
-    localStorage.setItem('voxguard_sensitivity', sensitivityPreset);
+    safeLocalStorage.setItem('voxguard_sensitivity', sensitivityPreset);
 
     try {
       await saveSettings({

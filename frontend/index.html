@@ -1,8 +1,38 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" style="background-color: #070a12; color: #ffffff;">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+
+    <!-- Immediate Dark Theme & Mobile Reset (Guarantees zero white flashes or blank canvas) -->
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        background-color: #070a12 !important;
+        color: #ffffff;
+        font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        overflow-x: hidden;
+      }
+    </style>
+
+    <!-- Global Safe Diagnostics: Prevents white screen and logs errors safely without exposing stack traces -->
+    <script>
+      (function() {
+        window.__vg_errors = [];
+        window.onerror = function(msg, source, line, col, err) {
+          console.warn('[VoxGuard Early Diagnostic]', msg, source, line, col, err);
+          return false;
+        };
+        window.onunhandledrejection = function(event) {
+          console.warn('[VoxGuard Early Promise Rejection]', event && event.reason);
+        };
+      })();
+    </script>
+
     <title>VoxGuard AI — Voice Cloning & Deepfake Defense</title>
     <meta name="description" content="AI-powered cybersecurity platform engineered to detect and mitigate voice-cloning, synthetic speech, and deepfake impersonation attacks." />
     
@@ -26,21 +56,43 @@
     <!-- Favicon -->
     <link rel="icon" type="image/svg+xml" href="/icon-192.svg" />
   </head>
-  <body>
-    <div id="root"></div>
+  <body style="margin: 0; padding: 0; background-color: #070a12; color: #ffffff; min-height: 100vh;">
+    <div id="root">
+      <!-- Dark Initial Placeholder to guarantee zero white flashes while bundle evaluates -->
+      <div id="vg-startup-loader" style="min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; background-color: #070a12; color: #00f0ff; text-align: center; padding: 24px; box-sizing: border-box; gap: 14px;">
+        <div style="width: 52px; height: 52px; border-radius: 14px; background: rgba(0, 240, 255, 0.12); border: 1px solid rgba(0, 240, 255, 0.35); display: flex; align-items: center; justify-content: center; font-size: 26px; box-shadow: 0 0 25px rgba(0, 240, 255, 0.2);">
+          🛡️
+        </div>
+        <div style="font-size: 1.15rem; font-weight: 700; letter-spacing: 0.08em; color: #ffffff;">VOXGUARD AI</div>
+        <div style="font-size: 0.88rem; color: #94a3b8;">Loading Secure Console...</div>
+      </div>
+    </div>
     <script type="module" src="/src/main.jsx"></script>
     <script>
-      // Register PWA Service Worker in production / supported browsers
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js')
-            .then((reg) => {
-              console.log('[VoxGuard PWA] Service worker active, scope:', reg.scope);
-            })
-            .catch((err) => {
-              console.warn('[VoxGuard PWA] Service worker registration note:', err);
-            });
-        });
+      // Clean up stale service workers safely (no crash in insecure LAN context)
+      try {
+        if (typeof navigator !== 'undefined' && navigator.serviceWorker && typeof navigator.serviceWorker.getRegistrations === 'function') {
+          navigator.serviceWorker.getRegistrations().then(function(registrations) {
+            if (Array.isArray(registrations)) {
+              for (var i = 0; i < registrations.length; i++) {
+                registrations[i].unregister();
+              }
+            }
+          }).catch(function() {});
+        }
+        if (typeof window !== 'undefined' && window.caches && typeof window.caches.keys === 'function') {
+          window.caches.keys().then(function(keys) {
+            if (Array.isArray(keys)) {
+              for (var j = 0; j < keys.length; j++) {
+                if (keys[j].indexOf('voxguard') !== -1) {
+                  window.caches.delete(keys[j]);
+                }
+              }
+            }
+          }).catch(function() {});
+        }
+      } catch (swErr) {
+        // Insecure context or restricted browser - safe ignore
       }
     </script>
   </body>

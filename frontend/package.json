@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:https": "VITE_HTTPS=true vite",
     "build": "vite build",
     "test": "node src/utils/__tests__/classification.test.js",
     "lint": "oxlint",

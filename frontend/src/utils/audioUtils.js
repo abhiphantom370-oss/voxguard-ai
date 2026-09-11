@@ -9,17 +9,22 @@
  * @returns {string}
  */
 export function getBestSupportedRecordingMimeType() {
-  if (typeof MediaRecorder === 'undefined' || !MediaRecorder.isTypeSupported) {
+  if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') {
     return '';
   }
 
+  // Priority order ensuring both iOS/WebKit and Desktop Chrome/Firefox select their best format:
+  // - iOS Safari natively supports audio/mp4
+  // - Desktop Chrome/Firefox natively support audio/webm;codecs=opus and audio/webm
+  // - When tested in this order, iOS Safari selects audio/mp4 (as it rejects webm),
+  //   while Chrome/Firefox select audio/webm (as they reject audio/mp4 in MediaRecorder).
   const preferredTypes = [
+    'audio/mp4',
     'audio/webm;codecs=opus',
     'audio/webm',
-    'audio/mp4;codecs=mp4a.40.2',
-    'audio/mp4',
-    'audio/aac',
     'audio/ogg;codecs=opus',
+    'audio/mp4;codecs=mp4a.40.2',
+    'audio/aac',
     'audio/wav'
   ];
 

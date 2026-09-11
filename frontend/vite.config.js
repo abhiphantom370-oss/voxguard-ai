@@ -9,14 +9,18 @@ const certPath = path.resolve(__dirname, 'certs/cert.pem')
 const keyPath = path.resolve(__dirname, 'certs/key.pem')
 
 const hasCerts = fs.existsSync(certPath) && fs.existsSync(keyPath)
+const useHttps = process.env.VITE_HTTPS === 'true' && hasCerts
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  build: {
+    target: 'es2020',
+  },
   server: {
     host: '0.0.0.0',
     port: 5175,
-    https: hasCerts
+    https: useHttps
       ? {
           cert: fs.readFileSync(certPath),
           key: fs.readFileSync(keyPath),

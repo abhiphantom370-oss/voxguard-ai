@@ -18,6 +18,7 @@ export function useAudioRecorder() {
   const chunksRef = useRef([]);
   const timerRef = useRef(null);
   const isCancelledRef = useRef(false);
+  const stopRecordingRef = useRef(null);
 
   // Stop stream tracks cleanly
   const stopStreamTracks = useCallback(() => {
@@ -50,7 +51,12 @@ export function useAudioRecorder() {
     setRecordingTime(0);
 
     try {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      // 1. Validate secure context
+      if (typeof window !== 'undefined' && !window.isSecureContext) {
+        throw new Error('Mobile microphone requires secure HTTPS access. Open the secure VoxGuard URL to enable recording.');
+      }
+
+      if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
         throw new Error('Microphone recording is not supported by your browser environment.');
       }
 
@@ -58,9 +64,7 @@ export function useAudioRecorder() {
         throw new Error('MediaRecorder API is not available in your browser.');
       }
 
-      // Detect best supported MIME type in specified priority order
-      const detectedMimeType = getBestSupportedRecordingMimeType();
-
+      // 2. Request microphone permission with audio constraints
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
@@ -70,7 +74,23 @@ export function useAudioRecorder() {
       });
       streamRef.current = stream;
 
-      // If a candidate type is confirmed, pass it; otherwise let browser choose default
+      // Handle stream unexpectedly ended (phone call, iOS app switcher)
+      stream.getAudioTracks().forEach((track) => {
+        track.onended = () => {
+          console.warn('[VoxGuard] Audio track ended unexpectedly.');
+          if (stopRecordingRef.current) {
+            stopRecordingRef.current();
+          } else {
+            stopStreamTracks();
+            stopTimer();
+            setIsRecording(false);
+          }
+        };
+      });
+
+      // 3. Negotiate best supported MIME type
+      const detectedMimeType = getBestSupportedRecordingMimeType();
+
       let mediaRecorder;
       if (detectedMimeType) {
         try {
@@ -114,10 +134,17 @@ export function useAudioRecorder() {
         const extension = getExtensionFromMime(realMime);
         const fileName = `recorded_voice_${Date.now()}.${extension}`;
 
-        const file = new File([blob], fileName, {
-          type: realMime,
-          lastModified: Date.now()
-        });
+        let file;
+        try {
+          file = new File([blob], fileName, {
+            type: realMime,
+            lastModified: Date.now()
+          });
+        } catch {
+          file = blob;
+          file.name = fileName;
+          file.lastModified = Date.now();
+        }
 
         setRecordedFile(file);
       };
@@ -141,10 +168,14 @@ export function useAudioRecorder() {
       console.warn('Unable to start audio recording:', err);
       let message = 'Failed to initiate microphone recording.';
 
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        message = 'Microphone permission denied. On mobile devices, tap the lock/permissions icon in your browser address bar and enable Microphone, then refresh.';
+      if (typeof window !== 'undefined' && !window.isSecureContext) {
+        message = 'Mobile microphone requires secure HTTPS access. Open the secure VoxGuard URL to enable recording.';
+      } else if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        message = 'Microphone access is required for voice recording. Enable microphone permission for VoxGuard in your browser settings.';
       } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-        message = 'No microphone device was detected on your system or mobile device.';
+        message = 'No microphone device was detected on your device.';
+      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+        message = 'Microphone is already in use by another application or process.';
       } else {
         message = err.message || message;
       }
@@ -172,6 +203,10 @@ export function useAudioRecorder() {
       setIsRecording(false);
     }
   }, [stopStreamTracks, stopTimer]);
+
+  useEffect(() => {
+    stopRecordingRef.current = stopRecording;
+  });
 
   // Cancel recording and discard audio
   const cancelRecording = useCallback(() => {

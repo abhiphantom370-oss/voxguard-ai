@@ -168,4 +168,27 @@ describe('Unified Classification & Trust Engine Tests', () => {
     assert.equal(createCanonicalLiveResult(null), null);
     assert.equal(createCanonicalLiveResult(undefined), null);
   });
+
+  test('Audio Capability & MIME Extension Negotiation', async () => {
+    const { checkAudioCapabilities } = await import('../audioCapability.js');
+    const { getExtensionFromMime, getBestSupportedRecordingMimeType } = await import('../audioUtils.js');
+
+    // Safe execution in Node/SSR environment without window
+    const caps = checkAudioCapabilities();
+    assert.equal(typeof caps.isSecureContext, 'boolean');
+    assert.equal(typeof caps.canRecord, 'boolean');
+
+    // MIME extension mappings
+    assert.equal(getExtensionFromMime('audio/mp4'), 'm4a');
+    assert.equal(getExtensionFromMime('audio/mp4;codecs=mp4a.40.2'), 'm4a');
+    assert.equal(getExtensionFromMime('audio/x-m4a'), 'm4a');
+    assert.equal(getExtensionFromMime('audio/aac'), 'm4a');
+    assert.equal(getExtensionFromMime('audio/webm;codecs=opus'), 'webm');
+    assert.equal(getExtensionFromMime('audio/webm'), 'webm');
+    assert.equal(getExtensionFromMime('audio/ogg;codecs=opus'), 'ogg');
+    assert.equal(getExtensionFromMime('audio/wav'), 'wav');
+
+    // Safe MIME type negotiation when MediaRecorder is undefined (e.g. Node)
+    assert.equal(getBestSupportedRecordingMimeType(), '');
+  });
 });

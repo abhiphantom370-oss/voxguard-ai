@@ -48,8 +48,10 @@ export default function AudioPlayer({ file, metadata = null, onClear }) {
   };
 
   const handleAudioError = (e) => {
-    const mediaError = e.currentTarget.error;
-    if (mediaError && mediaError.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) {
+    const mediaError = e.currentTarget?.error;
+    const errCode = mediaError?.code;
+    const notSupportedCode = typeof window !== 'undefined' && window.MediaError ? window.MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED : 4;
+    if (errCode === notSupportedCode || errCode) {
       setPlaybackError(true);
     }
   };

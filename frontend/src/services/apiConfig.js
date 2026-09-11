@@ -4,12 +4,11 @@
  */
 
 const rawBaseUrl = import.meta.env.VITE_API_BASE_URL;
-const isPageHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
 
 export const API_BASE_URL = (
   rawBaseUrl && rawBaseUrl.trim()
     ? rawBaseUrl.trim().replace(/\/+$/, '')
-    : (isPageHttps ? '' : 'http://localhost:8000')
+    : ''
 );
 
 export const ENDPOINTS = {

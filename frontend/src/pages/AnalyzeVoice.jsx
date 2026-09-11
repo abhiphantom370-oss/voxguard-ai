@@ -18,6 +18,7 @@ import AudioPlayer from '../components/audio/AudioPlayer';
 import RiskBadge from '../components/common/RiskBadge';
 import { analyzeAudio, fetchSpeakers } from '../services/analysisService';
 import { classifyDeepfakeProbability, calculateUnifiedRisk } from '../utils/classification';
+import { safeLocalStorage } from '../utils/safeStorage';
 
 export default function AnalyzeVoice() {
   const [selectedFile, setSelectedFile] = useState(null);
@@ -81,7 +82,7 @@ export default function AnalyzeVoice() {
       const contract = await analyzeAudio(selectedFile, {
         duration: fileMetadata?.duration,
         speakerId: selectedSpeakerId !== 'none' ? selectedSpeakerId : null,
-        sensitivity: localStorage.getItem('voxguard_sensitivity') || 'balanced'
+        sensitivity: safeLocalStorage.getItem('voxguard_sensitivity') || 'balanced'
       });
       setAnalysisContract(contract);
     } catch (err) {

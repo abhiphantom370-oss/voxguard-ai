@@ -68,10 +68,16 @@ export function useMicrophone() {
     stop(); // Ensure previous session is completely closed
 
     try {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      // 1. Validate secure context
+      if (typeof window !== 'undefined' && !window.isSecureContext) {
+        throw new Error('Mobile microphone requires secure HTTPS access. Open the secure VoxGuard URL to enable recording.');
+      }
+
+      if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
         throw new Error('Microphone audio capture is not supported by your browser environment.');
       }
 
+      // 2. Request user media with audio constraints
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
@@ -83,14 +89,29 @@ export function useMicrophone() {
       streamRef.current = stream;
       setPermissionState('granted');
 
-      // Initialize Web Audio API
+      // Handle stream unexpectedly ending (e.g. incoming phone call, iOS backgrounding)
+      stream.getAudioTracks().forEach((track) => {
+        track.onended = () => {
+          console.warn('[VoxGuard] Live microphone track ended unexpectedly.');
+          stop();
+        };
+      });
+
+      // 3. Initialize Web Audio API (supporting iOS webkitAudioContext)
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) {
+        throw new Error('Web Audio API is not supported in this browser.');
+      }
       const audioCtx = new AudioCtx();
       audioContextRef.current = audioCtx;
 
-      // Resume context if suspended (browser autoplay policy)
+      // Resume context if suspended (iOS WebKit requires resume within user gesture)
       if (audioCtx.state === 'suspended') {
-        await audioCtx.resume();
+        try {
+          await audioCtx.resume();
+        } catch (resumeErr) {
+          console.warn('[VoxGuard] AudioContext resume note:', resumeErr);
+        }
       }
 
       const analyser = audioCtx.createAnalyser();
@@ -125,11 +146,13 @@ export function useMicrophone() {
       console.warn('Microphone access failed:', err);
       let userFriendlyMsg = 'Could not access microphone.';
 
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+      if (typeof window !== 'undefined' && !window.isSecureContext) {
+        userFriendlyMsg = 'Mobile microphone requires secure HTTPS access. Open the secure VoxGuard URL to enable recording.';
+      } else if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
         setPermissionState('denied');
-        userFriendlyMsg = 'Microphone permission denied. Please allow audio access in browser site settings.';
+        userFriendlyMsg = 'Microphone access is required for live voice analysis. Enable microphone permission for VoxGuard in your browser settings.';
       } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-        userFriendlyMsg = 'No microphone device was detected on your system.';
+        userFriendlyMsg = 'No microphone device was detected on your device.';
       } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
         userFriendlyMsg = 'Microphone is already in use by another application or process.';
       } else {

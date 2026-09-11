@@ -20,17 +20,7 @@ async function apiRequest(endpoint, options = {}) {
   try {
     response = await fetch(primaryUrl, options);
   } catch (primaryErr) {
-    if (!configuredBase) {
-      // In local development without explicit VITE_API_BASE_URL, fallback to direct localhost:8000
-      const directUrl = `http://localhost:8000${endpoint}`;
-      try {
-        response = await fetch(directUrl, options);
-      } catch (directErr) {
-        throw new Error('Unable to connect to VoxGuard inference backend at http://localhost:8000.');
-      }
-    } else {
-      throw new Error(`Unable to connect to VoxGuard inference backend at ${configuredBase}.`);
-    }
+    throw new Error(primaryErr.message || `Unable to connect to VoxGuard inference backend${configuredBase ? ` at ${configuredBase}` : ''}.`);
   }
 
   if (!response.ok) {

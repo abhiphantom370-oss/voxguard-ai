@@ -11,7 +11,8 @@ import {
   VolumeX,
   ShieldCheck,
   ShieldAlert,
-  Loader2
+  Loader2,
+  ExternalLink
 } from 'lucide-react';
 import LiveWaveform from '../components/audio/LiveWaveform';
 import RiskBadge from '../components/common/RiskBadge';
@@ -20,6 +21,7 @@ import { formatDuration } from '../services/audioService';
 import { sendLiveChunk } from '../services/analysisService';
 import { getBestSupportedRecordingMimeType } from '../utils/audioUtils';
 import { createCanonicalLiveResult } from '../utils/classification';
+import { checkAudioCapabilities } from '../utils/audioCapability';
 
 export default function LiveDetection() {
   const {
@@ -33,6 +35,7 @@ export default function LiveDetection() {
     analyserNode
   } = useMicrophone();
 
+  const [capabilities] = useState(() => checkAudioCapabilities());
   const [sessionSeconds, setSessionSeconds] = useState(0);
   const [canonicalLiveResult, setCanonicalLiveResult] = useState(null);
   const [chunkCount, setChunkCount] = useState(0);
@@ -136,20 +139,26 @@ export default function LiveDetection() {
       startNextChunk();
     } catch (err) {
       isLiveRef.current = false;
-      addLog('threat', 'HARDWARE ERROR', 'Microphone Access Failed', 'Permission denied or device unavailable. On mobile: tap lock icon in address bar -> allow Microphone.');
-      addDiagnostic(`[Hardware Error] ${err?.message || 'getUserMedia failed'}`, 'critical');
+      const userMsg = err.message || 'Microphone access is required for live voice analysis. Enable microphone permission for VoxGuard in your browser settings.';
+      addLog('threat', 'HARDWARE ERROR', 'Microphone Access Failed', userMsg);
+      addDiagnostic(`[Hardware Error] ${userMsg}`, 'critical');
     }
   };
 
-  // Slices microphone stream into clean 2.5-second WebM audio chunks
+  // Slices microphone stream into clean 2.5-second audio chunks
   const startNextChunk = () => {
     if (!isLiveRef.current || !activeStreamRef.current) return;
 
-    const mimeType = getBestSupportedRecordingMimeType() || 'audio/webm';
+    const detectedMime = getBestSupportedRecordingMimeType();
     let recorder;
-    try {
-      recorder = new MediaRecorder(activeStreamRef.current, { mimeType });
-    } catch {
+    if (detectedMime) {
+      try {
+        recorder = new MediaRecorder(activeStreamRef.current, { mimeType: detectedMime });
+      } catch (mimeErr) {
+        console.warn('[VoxGuard Live] MediaRecorder failed with detected MIME, falling back to default:', mimeErr);
+        recorder = new MediaRecorder(activeStreamRef.current);
+      }
+    } else {
       recorder = new MediaRecorder(activeStreamRef.current);
     }
     activeRecorderRef.current = recorder;
@@ -163,7 +172,8 @@ export default function LiveDetection() {
 
     recorder.onstop = () => {
       if (currentChunks.length > 0 && isLiveRef.current) {
-        const chunkBlob = new Blob(currentChunks, { type: recorder.mimeType || mimeType });
+        const actualMime = recorder.mimeType || detectedMime || 'audio/webm';
+        const chunkBlob = new Blob(currentChunks, { type: actualMime });
         chunkIndexRef.current += 1;
         const currentIdx = chunkIndexRef.current;
 
@@ -318,6 +328,46 @@ export default function LiveDetection() {
 
   return (
     <div>
+      {/* Insecure LAN HTTP Notice */}
+      {capabilities.isInsecureLanHttp && (
+        <div style={{
+          margin: '0 0 20px 0',
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: 12,
+          background: 'rgba(234, 179, 8, 0.1)',
+          border: '1px solid rgba(234, 179, 8, 0.35)',
+          borderRadius: 'var(--radius-md)',
+          padding: '12px 16px',
+          color: '#fef08a',
+          fontSize: '0.84rem',
+          lineHeight: 1.5
+        }}>
+          <ShieldAlert size={18} color="#eab308" style={{ flexShrink: 0, marginTop: 2 }} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span>
+              <strong>Mobile Notice:</strong> Mobile microphone requires secure HTTPS access. Open the secure VoxGuard URL to enable recording.
+            </span>
+            {capabilities.secureLanUrl && (
+              <a
+                href={capabilities.secureLanUrl}
+                style={{
+                  color: 'var(--cyan-400)',
+                  fontWeight: 600,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  textDecoration: 'none'
+                }}
+              >
+                <span>Switch to Secure HTTPS ({capabilities.secureLanUrl})</span>
+                <ExternalLink size={13} />
+              </a>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Page Header */}
       <div className="page-header-bar">
         <div className="page-intro">

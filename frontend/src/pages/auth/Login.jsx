@@ -71,7 +71,7 @@ export default function Login() {
             </div>
             <p className="auth-demo-text">Pre-loaded with official SecOps credentials:</p>
             <div className="auth-demo-creds">
-              <code>{demoCredentials.email}</code> / <code>{demoCredentials.password}</code>
+              <code>{demoCredentials?.email || 'admin@voxguard.ai'}</code> / <code>{demoCredentials?.password || 'VoxGuard2026!'}</code>
             </div>
           </div>
           <button
