@@ -47,6 +47,7 @@ class AnalysisResponse(BaseModel):
     features: Optional[ForensicFeatures] = Field(None, description="Real extracted acoustic signal measurements")
     modelName: str = Field("VoxGuard-AcousticNet-v3.0", description="Inference model name")
     modelVersion: str = Field("3.0.0", description="Inference model identifier")
+    neural_available: Optional[bool] = Field(True, description="Indicates if heavy neural inference was executed")
     processingTime: int = Field(..., description="Execution latency in milliseconds")
     timing: Optional[Dict[str, int]] = Field(default_factory=dict, description="Detailed stage latency breakdown")
     message: str = Field(..., description="Human-readable summary explanation")
@@ -76,6 +77,7 @@ class LiveChunkResponse(BaseModel):
     scam_intent_score: Optional[float] = None
     scam_reasons: Optional[List[str]] = None
     contributingSignals: Optional[Dict[str, Any]] = None
+    neural_available: Optional[bool] = Field(True, description="Indicates if heavy neural inference was executed")
     rms: float = Field(..., description="Chunk RMS audio level")
     isAlert: bool = Field(..., description="True if anomaly exceeds alert threshold")
     reasons: List[str] = Field(default_factory=list, description="Key acoustic indicators detected in chunk")

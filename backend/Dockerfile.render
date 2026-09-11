@@ -1,0 +1,31 @@
+# Render Free Cloud-Lite Deployment for VoxGuard AI Backend
+FROM python:3.11-slim
+
+# Prevent Python from writing .pyc, enable unbuffered logging, activate Cloud-Lite mode
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    VOXGUARD_CLOUD_LITE=true \
+    PORT=10000 \
+    PYTHONPATH="/app/app:$PYTHONPATH"
+
+WORKDIR /app
+
+# Install minimal OS packages for audio decoding (PyAV/FFmpeg) and health checking
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    libsndfile1 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install lightweight Python dependencies (fastapi, uvicorn, pydantic, numpy, scipy, av)
+COPY requirements-render.txt .
+RUN pip install --no-cache-dir -r requirements-render.txt
+
+# Copy backend application source
+COPY . .
+
+# Expose Render standard port
+EXPOSE 10000
+
+# Start Uvicorn using the verified FastAPI module and app object on dynamic Render PORT
+CMD ["sh", "-c", "exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-10000}"]

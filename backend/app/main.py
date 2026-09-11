@@ -12,9 +12,8 @@ if app_dir not in sys.path:
     sys.path.insert(0, app_dir)
 
 from utils.logging import setup_logging
+from utils.config import is_cloud_lite
 from db.database import init_db
-from services.deepfake_detector import DeepfakeDetectorService
-from services.speech_transcriber import transcriber_service
 from services.speaker_verifier import speaker_service
 from api.analyze import router as analyze_router
 from api.live import router as live_router
@@ -28,27 +27,33 @@ logger = setup_logging()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Initialize SQLite schema & warm up ML models ONCE into memory
-    logger.info("[VoxGuard] Starting up VoxGuard AI Forensic Inference Engine...")
+    # Startup: Initialize SQLite schema
+    logger.info("[VoxGuard] Starting up VoxGuard AI Backend...")
     try:
         init_db()
         logger.info("[VoxGuard] SQLite database initialized successfully.")
     except Exception as db_err:
         logger.error(f"[VoxGuard] Database initialization error: {db_err}", exc_info=True)
 
-    try:
-        detector = DeepfakeDetectorService.get_instance()
-        logger.info(f"[VoxGuard] Verified: AcousticNet {detector.model_version} on {detector.device} warmed up.")
-    except Exception as m_err:
-        logger.error(f"[VoxGuard Startup Error] Deepfake detector model initialization failed: {m_err}", exc_info=True)
+    if is_cloud_lite():
+        logger.info("[VoxGuard] VOXGUARD_CLOUD_LITE=true: Heavy ML models (PyTorch, Whisper, AASIST) are completely bypassed.")
+    else:
+        # Full mode: Warm up ML models once into memory
+        try:
+            from services.deepfake_detector import DeepfakeDetectorService
+            detector = DeepfakeDetectorService.get_instance()
+            logger.info(f"[VoxGuard] Verified: AcousticNet {detector.model_version} on {detector.device} warmed up.")
+        except Exception as m_err:
+            logger.error(f"[VoxGuard Startup Error] Deepfake detector model initialization failed: {m_err}", exc_info=True)
 
-    try:
-        if transcriber_service.model is not None:
-            logger.info(f"[VoxGuard] Verified: Faster-Whisper ({transcriber_service.model_name}) cached in memory.")
-        else:
-            logger.warning("[VoxGuard] Faster-Whisper model could not be loaded into memory.")
-    except Exception as s_err:
-        logger.error(f"[VoxGuard] STT service load error: {s_err}", exc_info=True)
+        try:
+            from services.speech_transcriber import transcriber_service
+            if transcriber_service.model is not None:
+                logger.info(f"[VoxGuard] Verified: Faster-Whisper ({transcriber_service.model_name}) cached in memory.")
+            else:
+                logger.warning("[VoxGuard] Faster-Whisper model could not be loaded into memory.")
+        except Exception as s_err:
+            logger.error(f"[VoxGuard] STT service load error: {s_err}", exc_info=True)
 
     yield
     logger.info("[VoxGuard] Shutting down VoxGuard AI Backend...")
@@ -62,6 +67,7 @@ app = FastAPI(
 
 # CORS Configuration
 default_origins = [
+    "https://voxguard-ai.pages.dev",
     "http://localhost:5173",
     "http://localhost:5174",
     "http://localhost:5175",
@@ -86,7 +92,7 @@ has_wildcard = "*" in configured_origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=configured_origins,
-    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_origin_regex=r"https://.*(\.vercel\.app|\.pages\.dev)",
     allow_credentials=not has_wildcard,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -113,6 +119,18 @@ app.include_router(settings_router)
 @app.get("/health")
 @app.get("/api/health")
 async def health_check():
+    if is_cloud_lite():
+        return {
+            "status": "ok",
+            "service": "VoxGuard AI",
+            "version": "3.0.0",
+            "mode": "cloud-lite",
+            "neural_available": False,
+            "engine": "cloud-lite-dsp"
+        }
+
+    from services.deepfake_detector import DeepfakeDetectorService
+    from services.speech_transcriber import transcriber_service
     detector = DeepfakeDetectorService.get_instance()
     return {
         "status": "healthy",
@@ -120,7 +138,9 @@ async def health_check():
         "version": "3.0.0",
         "modelVersion": detector.model_version,
         "device": str(detector.device),
-        "sttAvailable": transcriber_service.model is not None
+        "sttAvailable": transcriber_service.model is not None,
+        "mode": "full",
+        "neural_available": True
     }
 
 if __name__ == "__main__":

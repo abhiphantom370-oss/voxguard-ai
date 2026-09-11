@@ -15,6 +15,15 @@ class SpeechTranscriberService:
 
     def __init__(self):
         import os
+        from utils.config import is_cloud_lite
+        if is_cloud_lite():
+            self.model_name = "whisper-disabled-cloud-lite"
+            self.device = "none"
+            self.compute_type = "none"
+            self.model = None
+            logger.info("[VoxGuard STT] Cloud-Lite mode active: Faster-Whisper initialization bypassed.")
+            return
+
         selected_model = os.environ.get("WHISPER_MODEL", "tiny")
         self.model_name = f"faster-whisper-{selected_model}-int8"
         self.device = os.environ.get("MODEL_DEVICE", "cpu")

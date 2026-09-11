@@ -19,12 +19,13 @@ export default defineConfig({
   },
   server: {
     host: '0.0.0.0',
+    allowedHosts: true,
     port: 5175,
     https: useHttps
       ? {
-          cert: fs.readFileSync(certPath),
-          key: fs.readFileSync(keyPath),
-        }
+        cert: fs.readFileSync(certPath),
+        key: fs.readFileSync(keyPath),
+      }
       : false,
     proxy: {
       '/api': {

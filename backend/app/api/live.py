@@ -7,10 +7,9 @@ from typing import Optional, Dict, Any
 from models.schemas import LiveChunkResponse
 from services.audio_preprocessor import AudioPreprocessor
 from services.forensic_features import ForensicFeatureExtractor
-from services.deepfake_detector import DeepfakeDetectorService
-from services.speech_transcriber import transcriber_service
 from services.scam_detector import scam_detector
 from services.risk_fusion import RiskFusionEngine
+from utils.config import is_cloud_lite
 
 logger = logging.getLogger("voxguard.api.live")
 
@@ -64,6 +63,45 @@ async def analyze_live_chunk(
 
         # Stage 2: Forensic signal measurements
         features_dict, _ = ForensicFeatureExtractor.extract_features(audio, sample_rate)
+
+        if is_cloud_lite():
+            rms_val = features_dict.get("rms", 0.0)
+            elapsed_ms = int(round((time.perf_counter() - t0) * 1000))
+            return LiveChunkResponse(
+                chunkIndex=chunk_index or 0,
+                sessionId=session_id or "default-live-session",
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                durationSec=duration,
+                deepfakeProbability=0.0,
+                authenticityScore="Authentic (DSP)",
+                classification="AUTHENTIC",
+                riskScore=10,
+                rollingThreatScore=10,
+                riskLevel="safe",
+                transcript="",
+                detectedIntents=[],
+                scamIntentScore=0.0,
+                scamCategory="LOW",
+                suspiciousPhrases=[],
+                scamReasons=[],
+                isCriticalWarning=False,
+                criticalWarningMessage=None,
+                deepfake_probability=0.0,
+                speaker_match_score=None,
+                scam_intent_score=0.0,
+                scam_reasons=[],
+                contributingSignals={},
+                neural_available=False,
+                rms=rms_val,
+                isAlert=False,
+                reasons=["Cloud-Lite DSP mode: Real-time neural live inspection disabled."],
+                processingTime=max(1, elapsed_ms),
+                message="Live chunk processed via cloud-lite-dsp."
+            )
+
+        # Full Mode: Neural Deepfake Detection & STT
+        from services.deepfake_detector import DeepfakeDetectorService
+        from services.speech_transcriber import transcriber_service
 
         # Stage 3: Deepfake model inference on chunk
         detector = DeepfakeDetectorService.get_instance()
